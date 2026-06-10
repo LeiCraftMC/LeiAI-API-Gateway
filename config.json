@@ -1,0 +1,33 @@
+{
+  "port": 3000,
+  "host": "0.0.0.0",
+  "healthCheckInterval": 30000,
+  "backends": [
+    {
+      "name": "OpenAI Official",
+      "url": "https://api.openai.com",
+      "apiKey": "sk-your-api-key-here",
+      "healthCheckPath": "/v1/models",
+      "healthCheckInterval": 30000
+    },
+    {
+      "name": "Local LLM Server",
+      "url": "http://localhost:8000",
+      "healthCheckPath": "/v1/models",
+      "healthCheckInterval": 30000
+    },
+    {
+      "name": "Remote LLM via SOCKS5",
+      "url": "http://remote-llm.example.com:8000",
+      "apiKey": "your-api-key",
+      "proxy": {
+        "host": "proxy.example.com",
+        "port": 1080,
+        "username": "user",
+        "password": "password"
+      },
+      "healthCheckPath": "/v1/models",
+      "healthCheckInterval": 30000
+    }
+  ]
+}
