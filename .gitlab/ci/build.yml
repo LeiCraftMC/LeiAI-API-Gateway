@@ -1,7 +1,15 @@
+stages:
+  - build
+
 build-and-push:
   stage: build
+  services:
+    - name: docker:20.10.16-dind
+      alias: docker
   variables:
     BUN_INSTALL_CACHE_DIR: .bun/install/cache
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
 
   cache:
     key:
@@ -12,32 +20,13 @@ build-and-push:
       - node_modules/
 
   before_script:
-
-    # Build the standalone binary
-
     - apt-get update
-    - apt-get install -y ca-certificates curl gnupg
+    - apt-get install -y ca-certificates curl
+    - curl -fsSL https://download.docker.com/linux/static/stable/x86_64/docker-latest.tgz | tar -xz -C /usr/local/bin --strip-components=1 docker/docker
     - bun install --frozen-lockfile
     - bun run compile linux-x64-baseline --no-version-tag
-
-    # Docker install
-
-    - install -m 0755 -d /etc/apt/keyrings
-    - curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-    - chmod a+r /etc/apt/keyrings/docker.gpg
-    - . /etc/os-release
-    - echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $VERSION_CODENAME stable" > /etc/apt/sources.list.d/docker.list
-    - apt-get update
-    - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin
-    - dockerd > /tmp/dockerd.log 2>&1 &
-    - sleep 5
-    - docker info || { cat /tmp/dockerd.log; exit 1; }
-
-    # Authenticate with Registry
-
     - echo "$CI_REGISTRY_PASSWORD" | docker login $CI_REGISTRY -u $CI_REGISTRY_USER --password-stdin
 
   script:
-
     - docker build -f docker/Dockerfile -t "$CI_REGISTRY_IMAGE:latest" .
     - docker push "$CI_REGISTRY_IMAGE:latest"
