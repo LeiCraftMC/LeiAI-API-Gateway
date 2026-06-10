@@ -36,11 +36,12 @@ export async function checkBackendHealth(backend: Backend): Promise<boolean> {
     const url = new URL(healthPath, backend.url).toString();
     const client = createHttpClient(backend);
 
-    const response = await client.get(url, {
+    const response = await client.request(url, {
+      method: "GET",
       timeout: 5000,
     });
 
-    const healthy = response.ok;
+    const healthy = response instanceof Response ? response.ok : response.ok;
 
     const status = healthStatusMap.get(backend.name);
     if (status) {

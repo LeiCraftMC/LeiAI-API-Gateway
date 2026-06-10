@@ -74,6 +74,18 @@ export class LoadBalancer {
         body,
       });
 
+      // Response object from streaming-capable client
+      if (backendResponse instanceof Response) {
+        const newHeaders = new Headers(backendResponse.headers);
+        newHeaders.set("X-Load-Balancer-Backend", backend.name);
+        return new Response(backendResponse.body, {
+          status: backendResponse.status,
+          statusText: backendResponse.statusText,
+          headers: newHeaders,
+        });
+      }
+
+      // Fallback for non-streaming responses
       return new Response(backendResponse.body, {
         status: backendResponse.status,
         headers: {

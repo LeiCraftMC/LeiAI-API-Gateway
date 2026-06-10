@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "bun run --hot src/index.ts",
     "start": "bun src/index.ts",
-    "build": "bun build src/index.ts --outfile dist/index.js"
+    "build": "bun build src/index.ts --outfile dist/index.js --target=bun"
   },
   "dependencies": {
     "socks": "^2.8.1"

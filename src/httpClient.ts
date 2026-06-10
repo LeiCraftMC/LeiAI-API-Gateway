@@ -1,5 +1,7 @@
 import type { Backend } from "./config";
 import { SocksClient } from "socks";
+import { Socket } from "net";
+import * as tls from "tls";
 
 interface HttpClientOptions {
   timeout?: number;
@@ -38,7 +40,7 @@ export class HttpClient {
   async request(
     url: string,
     options?: RequestInit & HttpClientOptions
-  ): Promise<HttpResponse> {
+  ): Promise<HttpResponse | Response> {
     const headers = new Headers(options?.headers || {});
 
     if (this.backend.apiKey) {
@@ -58,7 +60,7 @@ export class HttpClient {
     url: string,
     headers: Headers,
     options?: RequestInit & HttpClientOptions
-  ): Promise<HttpResponse> {
+  ): Promise<Response> {
     const controller = new AbortController();
     const timeout = options?.timeout || 30000;
     const timeoutId = setTimeout(() => controller.abort(), timeout);
@@ -70,14 +72,11 @@ export class HttpClient {
         signal: controller.signal,
       });
 
-      const body = await response.text();
-
-      return {
-        ok: response.ok,
+      return new Response(response.body, {
         status: response.status,
-        body,
+        statusText: response.statusText,
         headers: response.headers,
-      };
+      });
     } finally {
       clearTimeout(timeoutId);
     }
@@ -87,10 +86,11 @@ export class HttpClient {
     url: string,
     headers: Headers,
     options?: RequestInit & HttpClientOptions
-  ): Promise<HttpResponse> {
+  ): Promise<Response> {
     const proxy = this.backend.proxy!;
     const parsedUrl = new URL(url);
-    const port = parseInt(parsedUrl.port || (parsedUrl.protocol === "https:" ? "443" : "80"));
+    const isHttps = parsedUrl.protocol === "https:";
+    const port = parseInt(parsedUrl.port || (isHttps ? "443" : "80"));
 
     try {
       const socket = await SocksClient.createConnection({
@@ -107,71 +107,231 @@ export class HttpClient {
         },
       });
 
-      const method = options?.method || "GET";
-      const path = parsedUrl.pathname + parsedUrl.search;
-      const headersStr = Array.from(headers.entries())
-        .map(([key, value]) => `${key}: ${value}`)
-        .join("\r\n");
-
-      let requestStr = `${method} ${path} HTTP/1.1\r\n`;
-      requestStr += `Host: ${parsedUrl.hostname}\r\n`;
-      requestStr += headersStr;
-      if (options?.body) {
-        const bodyStr = typeof options.body === "string" ? options.body : String(options.body);
-        requestStr += `\r\nContent-Length: ${Buffer.byteLength(bodyStr)}\r\n\r\n${bodyStr}`;
-      } else {
-        requestStr += "\r\n\r\n";
+      // For HTTPS through SOCKS5, we need to establish a TLS tunnel
+      if (isHttps) {
+        return this.requestViaSocksTLS(socket.socket, url, headers, options, parsedUrl);
       }
 
-      const timeout = options?.timeout || 30000;
-      const response = await this.readHttpResponse(socket.socket, timeout);
-      socket.socket.destroy();
-
-      return response;
+      return this.requestViaSocksHTTP(socket.socket, url, headers, options, parsedUrl);
     } catch (error) {
       throw new Error(`SOCKS proxy request failed: ${error}`);
     }
   }
 
-  private async readHttpResponse(socket: any, timeout: number): Promise<HttpResponse> {
+  private async requestViaSocksHTTP(
+    socket: Socket,
+    url: string,
+    headers: Headers,
+    options?: RequestInit & HttpClientOptions,
+    parsedUrl?: URL
+  ): Promise<Response> {
+    parsedUrl = parsedUrl || new URL(url);
+    const method = options?.method || "GET";
+    const path = parsedUrl.pathname + parsedUrl.search;
+
+    // Build HTTP request
+    let requestStr = `${method} ${path} HTTP/1.1\r\n`;
+    requestStr += `Host: ${parsedUrl.hostname}\r\n`;
+
+    headers.forEach((value, key) => {
+      requestStr += `${key}: ${value}\r\n`;
+    });
+
+    let bodyBuffer: Buffer | null = null;
+    if (options?.body) {
+      const bodyStr = typeof options.body === "string" ? options.body : String(options.body);
+      bodyBuffer = Buffer.from(bodyStr);
+      requestStr += `Content-Length: ${bodyBuffer.length}\r\n`;
+    }
+
+    requestStr += "Connection: close\r\n\r\n";
+
+    // Write request
+    socket.write(requestStr);
+    if (bodyBuffer) {
+      socket.write(bodyBuffer);
+    }
+
+    // Stream response back
     return new Promise((resolve, reject) => {
-      const timeoutId = setTimeout(() => {
-        reject(new Error("HTTP response timeout"));
-      }, timeout);
+      let responseStarted = false;
+      let statusCode = 200;
+      let responseHeaders: Headers = new Headers();
+      const chunks: Buffer[] = [];
 
-      let data = "";
       socket.on("data", (chunk: Buffer) => {
-        data += chunk.toString();
-      });
+        if (!responseStarted) {
+          chunks.push(chunk);
+          const data = Buffer.concat(chunks).toString();
+          const headerEndIdx = data.indexOf("\r\n\r\n");
 
-      socket.on("end", () => {
-        clearTimeout(timeoutId);
-        try {
-          const [statusLine, ...rest] = data.split("\r\n");
-          const status = parseInt(statusLine.split(" ")[1]);
-          const headerEndIdx = rest.findIndex((line) => line === "");
-          const headerLines = rest.slice(0, headerEndIdx);
-          const body = rest.slice(headerEndIdx + 1).join("\r\n");
+          if (headerEndIdx !== -1) {
+            responseStarted = true;
+            const headerSection = data.substring(0, headerEndIdx);
+            const lines = headerSection.split("\r\n");
+            const statusLine = lines[0];
+            statusCode = parseInt(statusLine.split(" ")[1]);
 
-          const headers = new Headers();
-          headerLines.forEach((line) => {
-            const [key, value] = line.split(": ");
-            if (key && value) headers.set(key, value);
-          });
+            for (let i = 1; i < lines.length; i++) {
+              const [key, value] = lines[i].split(": ");
+              if (key && value) {
+                responseHeaders.set(key, value);
+              }
+            }
 
-          resolve({
-            ok: status >= 200 && status < 300,
-            status,
-            body,
-            headers,
-          });
-        } catch (error) {
-          reject(error);
+            const bodyStart = headerEndIdx + 4;
+            const bodyData = data.substring(bodyStart);
+
+            // Create a new readable stream from remaining data
+            const bodyStream = new ReadableStream({
+              start(controller) {
+                if (bodyData.length > 0) {
+                  controller.enqueue(Buffer.from(bodyData));
+                }
+
+                socket.on("data", (newChunk: Buffer) => {
+                  controller.enqueue(newChunk);
+                });
+
+                socket.on("end", () => {
+                  controller.close();
+                });
+
+                socket.on("error", (error: Error) => {
+                  controller.error(error);
+                });
+              },
+            });
+
+            resolve(
+              new Response(bodyStream, {
+                status: statusCode,
+                headers: responseHeaders,
+              })
+            );
+          }
         }
       });
 
       socket.on("error", (error: Error) => {
-        clearTimeout(timeoutId);
+        reject(error);
+      });
+
+      socket.on("end", () => {
+        if (!responseStarted) {
+          reject(new Error("Socket closed before response received"));
+        }
+      });
+    });
+  }
+
+  private async requestViaSocksTLS(
+    socket: Socket,
+    url: string,
+    headers: Headers,
+    options?: RequestInit & HttpClientOptions,
+    parsedUrl?: URL
+  ): Promise<Response> {
+    // For HTTPS through SOCKS5, establish TLS tunnel
+    parsedUrl = parsedUrl || new URL(url);
+
+    return new Promise((resolve, reject) => {
+      const tlsSocket = tls.connect(
+        {
+          socket,
+          servername: parsedUrl.hostname,
+          rejectUnauthorized: true,
+        },
+        () => {
+          const method = options?.method || "GET";
+          const path = parsedUrl.pathname + parsedUrl.search;
+
+          let requestStr = `${method} ${path} HTTP/1.1\r\n`;
+          requestStr += `Host: ${parsedUrl.hostname}\r\n`;
+
+          headers.forEach((value, key) => {
+            requestStr += `${key}: ${value}\r\n`;
+          });
+
+          let bodyBuffer: Buffer | null = null;
+          if (options?.body) {
+            const bodyStr = typeof options.body === "string" ? options.body : String(options.body);
+            bodyBuffer = Buffer.from(bodyStr);
+            requestStr += `Content-Length: ${bodyBuffer.length}\r\n`;
+          }
+
+          requestStr += "Connection: close\r\n\r\n";
+
+          tlsSocket.write(requestStr);
+          if (bodyBuffer) {
+            tlsSocket.write(bodyBuffer);
+          }
+
+          let responseStarted = false;
+          let statusCode = 200;
+          let responseHeaders: Headers = new Headers();
+          const chunks: Buffer[] = [];
+
+          tlsSocket.on("data", (chunk: Buffer) => {
+            if (!responseStarted) {
+              chunks.push(chunk);
+              const data = Buffer.concat(chunks).toString("binary");
+              const headerEndIdx = data.indexOf("\r\n\r\n");
+
+              if (headerEndIdx !== -1) {
+                responseStarted = true;
+                const headerSection = data.substring(0, headerEndIdx);
+                const lines = headerSection.split("\r\n");
+                const statusLine = lines[0];
+                statusCode = parseInt(statusLine.split(" ")[1]);
+
+                for (let i = 1; i < lines.length; i++) {
+                  const [key, value] = lines[i].split(": ");
+                  if (key && value) {
+                    responseHeaders.set(key, value);
+                  }
+                }
+
+                const bodyStart = headerEndIdx + 4;
+                const bodyData = data.substring(bodyStart, data.length);
+
+                const bodyStream = new ReadableStream({
+                  start(controller) {
+                    if (bodyData.length > 0) {
+                      controller.enqueue(Buffer.from(bodyData, "binary"));
+                    }
+
+                    tlsSocket.on("data", (newChunk: Buffer) => {
+                      controller.enqueue(newChunk);
+                    });
+
+                    tlsSocket.on("end", () => {
+                      controller.close();
+                    });
+
+                    tlsSocket.on("error", (error: Error) => {
+                      controller.error(error);
+                    });
+                  },
+                });
+
+                resolve(
+                  new Response(bodyStream, {
+                    status: statusCode,
+                    headers: responseHeaders,
+                  })
+                );
+              }
+            }
+          });
+
+          tlsSocket.on("error", (error: Error) => {
+            reject(error);
+          });
+        }
+      );
+
+      tlsSocket.on("error", (error: Error) => {
         reject(error);
       });
     });
