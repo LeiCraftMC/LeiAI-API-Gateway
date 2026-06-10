@@ -21,7 +21,7 @@ export class HttpClient {
     this.backend = backend;
   }
 
-  async get(url: string, options?: HttpClientOptions): Promise<HttpResponse> {
+  async get(url: string, options?: HttpClientOptions): Promise<HttpResponse | Response> {
     return this.request(url, { method: "GET", ...options });
   }
 
@@ -29,7 +29,7 @@ export class HttpClient {
     url: string,
     body: string,
     options?: HttpClientOptions
-  ): Promise<HttpResponse> {
+  ): Promise<HttpResponse | Response> {
     return this.request(url, {
       method: "POST",
       body,
@@ -94,6 +94,7 @@ export class HttpClient {
 
     try {
       const socket = await SocksClient.createConnection({
+        command: "connect",
         proxy: {
           type: 5,
           host: proxy.host,

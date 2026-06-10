@@ -1,5 +1,5 @@
 {
-  "name": "ai-load-balancer",
+  "name": "ai-api-load-balancer",
   "version": "1.0.0",
   "description": "OpenAI-compatible API load balancer with SOCKS5 support",
   "main": "src/index.ts",
@@ -7,12 +7,21 @@
   "scripts": {
     "dev": "bun run --hot src/index.ts",
     "start": "bun src/index.ts",
-    "build": "bun build src/index.ts --outfile dist/index.js --target=bun"
+    "build": "bun build src/index.ts --outfile dist/index.js --target=bun",
+    "test": "bun test",
+    "test:smoke": "bun test tests/smoke.test.ts",
+    "test:unit": "bun test tests/unit.test.ts",
+    "test:integration": "bun test tests/integration.test.ts"
   },
   "dependencies": {
     "socks": "^2.8.1"
   },
   "devDependencies": {
-    "bun-types": "latest"
+    "bun-types": "latest",
+    "@types/bun": "latest"
+  },
+  "private": true,
+  "peerDependencies": {
+    "typescript": "^5"
   }
 }

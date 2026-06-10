@@ -16,12 +16,14 @@ export class LoadBalancer {
     if (healthyBackends.length === 0) {
       console.warn("No healthy backends available, falling back to all backends");
       if (this.backends.length === 0) return null;
+      const backend = this.backends[this.currentIndex % this.backends.length];
       this.currentIndex = (this.currentIndex + 1) % this.backends.length;
-      return this.backends[this.currentIndex - 1];
+      return backend;
     }
 
+    const backend = healthyBackends[this.currentIndex % healthyBackends.length];
     this.currentIndex = (this.currentIndex + 1) % healthyBackends.length;
-    return healthyBackends[this.currentIndex - 1];
+    return backend;
   }
 
   getAllBackends(): Backend[] {

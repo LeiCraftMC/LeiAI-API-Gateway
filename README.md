@@ -1,4 +1,4 @@
-# AI Load Balancer
+# AI API Load Balancer
 
 A high-performance OpenAI-compatible API load balancer built with Bun. Distributes requests across multiple LLM backends with round-robin routing, health checks, and optional SOCKS5 proxy support.
 
