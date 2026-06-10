@@ -11,7 +11,8 @@
     "test": "bun test",
     "test:smoke": "bun test tests/smoke.test.ts",
     "test:unit": "bun test tests/unit.test.ts",
-    "test:integration": "bun test tests/integration.test.ts"
+    "test:integration": "bun test tests/integration.test.ts",
+    "test:socks5": "bun test tests/socks5-streaming.test.ts"
   },
   "dependencies": {
     "socks": "^2.8.1"
