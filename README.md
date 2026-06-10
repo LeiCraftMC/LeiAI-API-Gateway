@@ -223,23 +223,157 @@ Ran 91 tests across 4 files
 
 ## Deployment
 
-### Docker
+### Docker (Quick Start)
 
-Create a `Dockerfile`:
-
-```dockerfile
-FROM oven/bun:latest
-WORKDIR /app
-COPY . .
-RUN bun install
-CMD ["bun", "start"]
-```
-
-Build and run:
+Single Dockerfile works for both development and production. Uses `bun compile` to create a standalone executable:
 
 ```bash
+# Build the image (multi-stage: compiles with Bun, runs without it)
 docker build -t ai-load-balancer .
-docker run -p 3000:3000 -v $(pwd)/config.json:/app/config.json ai-load-balancer
+
+# Run the container
+docker run -p 3000:3000 \
+  -v $(pwd)/config.json:/app/config.json \
+  ai-load-balancer
+```
+
+**Image size**: ~100MB (minimal Debian base with compiled executable)
+
+### Docker Compose (Recommended)
+
+For easy local development with optional Ollama backend:
+
+```bash
+# Start load balancer only
+docker-compose up
+
+# Or in detached mode
+docker-compose up -d
+
+# Start with local LLM (uncomment local-llm service in docker-compose.yml)
+docker-compose up -d
+docker-compose up -d local-llm
+```
+
+The compose file includes:
+- **load-balancer**: Runs on port 3000
+- **local-llm** (optional): Ollama instance for local testing on port 11434 (disabled by default)
+
+Configuration:
+- Automatically mounts your `config.json` 
+- Health checks enabled
+- Auto-restart on failure
+- Works for both development and production
+
+### Docker Environment Variables
+
+```bash
+# Config file location (default: /app/config.json)
+docker run -e CONFIG_PATH=/app/custom-config.json ai-load-balancer
+```
+
+### Example: Full Setup with Docker Compose
+
+**config.json:**
+```json
+{
+  "port": 3000,
+  "host": "0.0.0.0",
+  "backends": [
+    {
+      "name": "OpenAI",
+      "url": "https://api.openai.com",
+      "apiKey": "sk-xxx"
+    },
+    {
+      "name": "Local LLM",
+      "url": "http://local-llm:11434"
+    }
+  ]
+}
+```
+
+**Run:**
+```bash
+# Enable local-llm in docker-compose.yml, then:
+docker-compose up
+```
+
+Then use the load balancer:
+```bash
+curl http://localhost:3000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "gpt-4", "messages": [...]}'
+```
+
+### Docker Image Info
+
+- **Build**: Multi-stage (Bun for compilation, Debian for runtime)
+- **Runtime Base**: Debian bookworm-slim
+- **Executable**: `bun compile` standalone binary
+- **Size**: ~100MB
+- **Port**: 3000
+- **Health Check**: Every 30 seconds
+- **User**: Non-root appuser (UID 1000)
+
+### Kubernetes
+
+For Kubernetes deployment, use the production Docker image:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-load-balancer
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ai-load-balancer
+  template:
+    metadata:
+      labels:
+        app: ai-load-balancer
+    spec:
+      containers:
+      - name: load-balancer
+        image: ai-load-balancer:prod
+        ports:
+        - containerPort: 3000
+        volumeMounts:
+        - name: config
+          mountPath: /app/config.json
+          subPath: config.json
+        livenessProbe:
+          httpGet:
+            path: /_health
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 30
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+      - name: config
+        configMap:
+          name: lb-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-load-balancer
+spec:
+  selector:
+    app: ai-load-balancer
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 3000
+  type: LoadBalancer
 ```
 
 ### systemd
