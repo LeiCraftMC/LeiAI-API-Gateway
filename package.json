@@ -1,28 +1,26 @@
 {
-  "name": "ai-api-load-balancer",
-  "version": "1.0.0",
-  "description": "OpenAI-compatible API load balancer with SOCKS5 support",
-  "main": "src/index.ts",
-  "type": "module",
-  "scripts": {
-    "dev": "bun run --hot src/index.ts",
-    "start": "bun src/index.ts",
-    "build": "bun build src/index.ts --outfile dist/index.js --target=bun",
-    "test": "bun test",
-    "test:smoke": "bun test tests/smoke.test.ts",
-    "test:unit": "bun test tests/unit.test.ts",
-    "test:integration": "bun test tests/integration.test.ts",
-    "test:socks5": "bun test tests/socks5-streaming.test.ts"
-  },
-  "dependencies": {
-    "socks": "^2.8.1"
-  },
-  "devDependencies": {
-    "bun-types": "latest",
-    "@types/bun": "latest"
-  },
-  "private": true,
-  "peerDependencies": {
-    "typescript": "^5"
-  }
+	"name": "ai-api-load-balancer",
+	"version": "1.0.0",
+	"description": "OpenAI-compatible API load balancer with SOCKS5 support",
+	"main": "src/index.ts",
+	"type": "module",
+	"scripts": {
+		"typecheck": "tsc -p ./tsconfig/tsconfig.typecheck.json && echo 'Typecheck passed!'",
+		"test": "bun test",
+		"dev": "bun run --watch src/index.ts",
+		"compile": "bun run ./scripts/compile",
+		"start": "bun run scripts/entrypoint.ts"
+	},
+	"dependencies": {
+		"socks": "^2.8.1"
+	},
+	"devDependencies": {
+		"@cleverjs/cli": "^2.4.0",
+		"bun-types": "latest",
+		"@types/bun": "latest"
+	},
+	"private": true,
+	"peerDependencies": {
+		"typescript": "^5"
+	}
 }

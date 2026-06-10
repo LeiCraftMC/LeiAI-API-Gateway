@@ -1,0 +1,36 @@
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+stages:
+  - test
+
+default:
+  image: oven/bun
+  interruptible: true
+  cache:
+    key:
+      files:
+        - bun.lock
+    paths:
+      - .bun/install/cache/
+      - node_modules/
+  before_script:
+    - apt-get update
+    - DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends bzip2 dpkg gnupg unzip
+    - rm -rf /var/lib/apt/lists/*
+    - bun install --frozen-lockfile
+
+variables:
+  BUN_INSTALL_CACHE_DIR: .bun/install/cache
+
+test:typecheck:
+  stage: test
+  script:
+    - bun run typecheck
+
+test:unit:
+  stage: test
+  script:
+    - bun test

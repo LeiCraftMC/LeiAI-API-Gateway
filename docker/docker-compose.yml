@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  load-balancer:
+    image: gcr.leicraftmc.de/leicraftmc/ai-api-load-balancer:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - CONFIG_PATH=/app/config.json
+    volumes:
+      - ./config.json:/app/config.json:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/_health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
