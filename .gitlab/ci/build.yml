@@ -1,13 +1,30 @@
-
+stages:
+  - build
 
 build-and-push:
+  stage: build
+  variables:
+    BUN_INSTALL_CACHE_DIR: .bun/install/cache
+
+  cache:
+    key:
+      files:
+        - bun.lock
+    paths:
+      - .bun/install/cache/
+      - node_modules/
 
   before_script:
 
-    # Docker install
+    # Build the standalone binary
 
     - apt-get update
-    - apt-get install -y ca-certificates curl gnupg iptables git
+    - apt-get install -y ca-certificates curl gnupg
+    - bun install --frozen-lockfile
+    - bun run compile linux-x64-baseline --no-version-tag
+
+    # Docker install
+
     - install -m 0755 -d /etc/apt/keyrings
     - curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
     - chmod a+r /etc/apt/keyrings/docker.gpg
@@ -18,12 +35,12 @@ build-and-push:
     - dockerd > /tmp/dockerd.log 2>&1 &
     - sleep 5
     - docker info || { cat /tmp/dockerd.log; exit 1; }
-    
+
     # Authenticate with Registry
 
     - echo "$CI_REGISTRY_PASSWORD" | docker login $CI_REGISTRY -u $CI_REGISTRY_USER --password-stdin
 
   script:
 
-    - docker build -t "$CI_REGISTRY_IMAGE:latest" .
+    - docker build -f docker/Dockerfile -t "$CI_REGISTRY_IMAGE:latest" .
     - docker push "$CI_REGISTRY_IMAGE:latest"

@@ -8,6 +8,6 @@ COPY ./build/bin/ai-api-load-balancer-linux-x64-baseline /usr/local/bin/ai-api-l
 
 RUN chmod u+x /usr/local/bin/ai-api-load-balancer
 
-EXPOSE 12151/tcp
+EXPOSE 3000/tcp
 
 ENTRYPOINT ["/usr/local/bin/ai-api-load-balancer"]
