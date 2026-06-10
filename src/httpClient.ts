@@ -171,12 +171,17 @@ export class HttpClient {
             const headerSection = data.substring(0, headerEndIdx);
             const lines = headerSection.split("\r\n");
             const statusLine = lines[0];
-            statusCode = parseInt(statusLine.split(" ")[1]);
+            if (!statusLine) {
+              reject(new Error("Invalid HTTP response"));
+              return;
+            }
+            const statusParts = statusLine.split(" ");
+            statusCode = parseInt(statusParts[1] || "500");
 
             for (let i = 1; i < lines.length; i++) {
-              const [key, value] = lines[i].split(": ");
-              if (key && value) {
-                responseHeaders.set(key, value);
+              const lineParts = lines[i]?.split(": ");
+              if (lineParts && lineParts[0] && lineParts[1]) {
+                responseHeaders.set(lineParts[0], lineParts[1]);
               }
             }
 
@@ -284,12 +289,17 @@ export class HttpClient {
                 const headerSection = data.substring(0, headerEndIdx);
                 const lines = headerSection.split("\r\n");
                 const statusLine = lines[0];
-                statusCode = parseInt(statusLine.split(" ")[1]);
+                if (!statusLine) {
+                  reject(new Error("Invalid HTTP response"));
+                  return;
+                }
+                const statusParts = statusLine.split(" ");
+                statusCode = parseInt(statusParts[1] || "500");
 
                 for (let i = 1; i < lines.length; i++) {
-                  const [key, value] = lines[i].split(": ");
-                  if (key && value) {
-                    responseHeaders.set(key, value);
+                  const lineParts = lines[i]?.split(": ");
+                  if (lineParts && lineParts[0] && lineParts[1]) {
+                    responseHeaders.set(lineParts[0], lineParts[1]);
                   }
                 }
 

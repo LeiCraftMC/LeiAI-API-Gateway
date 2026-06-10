@@ -39,8 +39,8 @@ describe("LoadBalancer Core Functionality", () => {
       const allBackends = lb.getAllBackends();
 
       expect(allBackends).toHaveLength(2);
-      expect(allBackends[0].name).toBe("backend-1");
-      expect(allBackends[1].name).toBe("backend-2");
+      expect(allBackends[0]?.name).toBe("backend-1");
+      expect(allBackends[1]?.name).toBe("backend-2");
     });
   });
 

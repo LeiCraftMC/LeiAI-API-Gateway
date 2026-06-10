@@ -279,9 +279,9 @@ describe("SOCKS5 Streaming Tests", () => {
       ];
 
       expect(backends).toHaveLength(3);
-      expect(backends[0].proxy?.host).toBe("proxy1.com");
-      expect(backends[1].proxy?.host).toBe("proxy2.com");
-      expect(backends[2].proxy?.port).toBe(1081);
+      expect(backends[0]?.proxy?.host).toBe("proxy1.com");
+      expect(backends[1]?.proxy?.host).toBe("proxy2.com");
+      expect(backends[2]?.proxy?.port).toBe(1081);
     });
 
     it("should support mixed direct and SOCKS5 backends", () => {
@@ -294,8 +294,8 @@ describe("SOCKS5 Streaming Tests", () => {
         },
       ];
 
-      expect(backends[0].proxy).toBeUndefined();
-      expect(backends[1].proxy).toBeDefined();
+      expect(backends[0]?.proxy).toBeUndefined();
+      expect(backends[1]?.proxy).toBeDefined();
     });
   });
 

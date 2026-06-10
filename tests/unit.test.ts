@@ -120,7 +120,7 @@ describe("Load Balancing Algorithm", () => {
     const results: string[] = [];
     for (let i = 0; i < 10; i++) {
       // Simulate round-robin
-      results.push(backends[i % 2].name);
+      results.push(backends[i % 2]?.name || "");
     }
 
     expect(results).toEqual(["a", "b", "a", "b", "a", "b", "a", "b", "a", "b"]);
@@ -137,11 +137,15 @@ describe("Load Balancing Algorithm", () => {
 
     for (let i = 0; i < 10; i++) {
       const idx = i % backends.length;
-      distribution[backends[idx].name]++;
+      const name = backends[idx]?.name;
+      if (name) {
+        distribution[name] = (distribution[name] ?? 0) + 1;
+      }
     }
 
     // With 10 requests across 3 backends: 4, 3, 3 or 3, 4, 3 or 3, 3, 4
-    expect(distribution[1] + distribution[2] + distribution[3]).toBe(10);
+    const total = Object.values(distribution).reduce((a, b) => a + b, 0);
+    expect(total).toBe(10);
   });
 });
 

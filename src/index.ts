@@ -16,7 +16,7 @@ async function main() {
 		);
 
 		const server = Bun.serve({
-			host: config.host,
+			hostname: config.host,
 			port: config.port,
 			async fetch(request: Request) {
 				const url = new URL(request.url);
