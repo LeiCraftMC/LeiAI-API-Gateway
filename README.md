@@ -182,9 +182,37 @@ bun run build
 
 Outputs to `dist/index.js`
 
-## Environment Variables
+## Testing
 
-- `CONFIG_PATH`: Path to configuration file (default: `config.json`)
+Comprehensive test suite with 67 tests covering all major functionality:
+
+```bash
+# Run all tests
+bun test
+
+# Run specific test suites
+bun test:smoke       # 18 smoke tests - basic imports and functionality
+bun test:unit        # 27 unit tests - configuration, algorithms, headers
+bun test:integration # 22 integration tests - request forwarding, failover
+```
+
+Test coverage includes:
+- Round-robin load distribution
+- Health checks and automatic failover
+- Request forwarding and header filtering
+- Backend configuration (API keys, SOCKS5 proxies)
+- Error handling and status codes
+- URL construction and query parameters
+- HTTP method support
+- Streaming responses
+
+Example output:
+```
+ 67 pass
+ 0 fail
+ 151 expect() calls
+Ran 67 tests across 3 files
+```
 
 ## Deployment
 
