@@ -5,9 +5,10 @@ A high-performance OpenAI-compatible API load balancer built with Bun. Distribut
 ## Features
 
 - **Round-robin load balancing**: Automatically distributes requests across healthy backends
+- **Full streaming support**: OpenAI streaming completions, SSE, and any streaming protocol
 - **Health checks**: Continuous monitoring of backend availability with automatic failover
 - **API key management**: Configure API keys per backend
-- **SOCKS5 proxy support**: Route backend requests through SOCKS5 proxies
+- **SOCKS5 proxy support**: Route backend requests through SOCKS5 proxies (including streaming)
 - **OpenAI compatible**: Works as a drop-in replacement for OpenAI API endpoints
 - **Health monitoring**: Built-in `/_health` endpoint to check backend status
 - **JSON configuration**: Simple configuration format for backends
@@ -106,6 +107,26 @@ curl http://localhost:3000/v1/chat/completions \
     "messages": [{"role": "user", "content": "Hello!"}]
   }'
 ```
+
+### Streaming responses
+
+Streaming fully works with both direct and SOCKS5 proxy backends:
+
+```bash
+curl http://localhost:3000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-4",
+    "messages": [{"role": "user", "content": "Write a poem"}],
+    "stream": true
+  }'
+```
+
+Works with any streaming protocol:
+- OpenAI streaming completions (SSE)
+- Server-Sent Events (SSE)
+- Any chunked transfer encoding
+- WebSocket upgrades (pass-through)
 
 ### Health check
 
