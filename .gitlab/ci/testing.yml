@@ -3,9 +3,6 @@ workflow:
     - if: '$CI_PIPELINE_SOURCE == "push"'
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
 
-stages:
-  - test
-
 default:
   image: oven/bun
   interruptible: true
