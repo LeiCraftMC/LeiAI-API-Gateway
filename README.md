@@ -184,7 +184,7 @@ Outputs to `dist/index.js`
 
 ## Testing
 
-Comprehensive test suite with 67 tests covering all major functionality:
+Comprehensive test suite with **91 tests** covering all major functionality:
 
 ```bash
 # Run all tests
@@ -194,24 +194,31 @@ bun test
 bun test:smoke       # 18 smoke tests - basic imports and functionality
 bun test:unit        # 27 unit tests - configuration, algorithms, headers
 bun test:integration # 22 integration tests - request forwarding, failover
+bun test:socks5      # 24 SOCKS5 streaming tests - proxy and streaming
 ```
 
 Test coverage includes:
-- Round-robin load distribution
-- Health checks and automatic failover
-- Request forwarding and header filtering
-- Backend configuration (API keys, SOCKS5 proxies)
-- Error handling and status codes
-- URL construction and query parameters
-- HTTP method support
-- Streaming responses
+- ✅ Round-robin load distribution
+- ✅ Health checks and automatic failover
+- ✅ Request forwarding and header filtering
+- ✅ Backend configuration (API keys, SOCKS5 proxies)
+- ✅ Error handling and status codes
+- ✅ URL construction and query parameters
+- ✅ HTTP method support
+- ✅ **Streaming responses** (direct and SOCKS5)
+- ✅ **SOCKS5 proxy support** with streaming (HTTP & HTTPS)
+- ✅ **Multiple proxies** for different backends
+- ✅ **Server-Sent Events** (SSE) over SOCKS5
+- ✅ **Chunked responses** through proxies
+- ✅ **API key injection** with SOCKS5
+- ✅ **SOCKS5 authentication** (username/password)
 
 Example output:
 ```
- 67 pass
+ 91 pass
  0 fail
- 151 expect() calls
-Ran 67 tests across 3 files
+ 200 expect() calls
+Ran 91 tests across 4 files
 ```
 
 ## Deployment
