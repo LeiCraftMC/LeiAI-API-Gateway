@@ -1,28 +1,25 @@
 import { describe, it, expect } from "bun:test";
-import { LoadBalancer } from "../src/loadBalancer";
+import { LoadBalancer, Provider } from "../src/loadBalancer";
+import { HealthMonitor } from "../src/healthCheck";
 import type { Backend } from "../src/config";
 
-// Simple tests that don't depend on global health check state
 describe("LoadBalancer Core Functionality", () => {
   describe("Round-robin routing", () => {
     it("should cycle through backends", () => {
-      // Create a fresh LoadBalancer without initializing health checks
       const backends: Backend[] = [
         { name: "a", url: "http://a.com" },
         { name: "b", url: "http://b.com" },
         { name: "c", url: "http://c.com" },
       ];
 
-      const lb = new LoadBalancer(backends);
+      const monitor = new HealthMonitor();
+      const lb = new LoadBalancer("my-provider", "/my-provider", backends, monitor);
 
-      // Since health checks aren't initialized, all backends will be filtered out
-      // But the LoadBalancer should fall back to returning all backends
       const b1 = lb.getNextBackend();
       const b2 = lb.getNextBackend();
       const b3 = lb.getNextBackend();
       const b4 = lb.getNextBackend();
 
-      // Just verify we get backends in order
       expect(b1?.name).toBeDefined();
       expect(b2?.name).toBeDefined();
       expect(b3?.name).toBeDefined();
@@ -35,7 +32,8 @@ describe("LoadBalancer Core Functionality", () => {
         { name: "backend-2", url: "http://localhost:8002" },
       ];
 
-      const lb = new LoadBalancer(backends);
+      const monitor = new HealthMonitor();
+      const lb = new LoadBalancer("my-provider", "/my-provider", backends, monitor);
       const allBackends = lb.getAllBackends();
 
       expect(allBackends).toHaveLength(2);
@@ -46,7 +44,8 @@ describe("LoadBalancer Core Functionality", () => {
 
   describe("Empty backend list", () => {
     it("should return null with no backends", () => {
-      const lb = new LoadBalancer([]);
+      const monitor = new HealthMonitor();
+      const lb = new LoadBalancer("my-provider", "/my-provider", [], monitor);
       const backend = lb.getNextBackend();
 
       expect(backend).toBeNull();
@@ -54,7 +53,8 @@ describe("LoadBalancer Core Functionality", () => {
 
     it("should handle single backend", () => {
       const backends = [{ name: "only", url: "http://only.com" }];
-      const lb = new LoadBalancer(backends);
+      const monitor = new HealthMonitor();
+      const lb = new LoadBalancer("my-provider", "/my-provider", backends, monitor);
 
       const b1 = lb.getNextBackend();
       const b2 = lb.getNextBackend();
@@ -65,9 +65,44 @@ describe("LoadBalancer Core Functionality", () => {
   });
 });
 
+describe("Provider Routing", () => {
+  it("should match by default prefix", () => {
+    const monitor = new HealthMonitor();
+    const provider = new Provider(
+      {
+        name: "my-provider",
+        backends: [{ name: "b", url: "http://b.com" }],
+      },
+      monitor
+    );
+
+    expect(provider.prefix).toBe("/my-provider");
+    expect(provider.matches("/my-provider")).toBe(true);
+    expect(provider.matches("/my-provider/v1/models")).toBe(true);
+    expect(provider.matches("/other")).toBe(false);
+  });
+
+  it("should match custom prefix", () => {
+    const monitor = new HealthMonitor();
+    const provider = new Provider(
+      {
+        name: "openai",
+        prefix: "/openai",
+        backends: [{ name: "b", url: "http://b.com" }],
+      },
+      monitor
+    );
+
+    expect(provider.matches("/openai")).toBe(true);
+    expect(provider.matches("/openai/v1/chat/completions")).toBe(true);
+    expect(provider.matches("/v1/models")).toBe(false);
+  });
+});
+
 describe("Request Forwarding", () => {
   it("should return 503 when no backends available", async () => {
-    const lb = new LoadBalancer([]);
+    const monitor = new HealthMonitor();
+    const lb = new LoadBalancer("my-provider", "/my-provider", [], monitor);
     const headers = new Headers();
 
     const response = await lb.forwardRequest("/test", "", "GET", headers);
@@ -76,7 +111,8 @@ describe("Request Forwarding", () => {
   });
 
   it("should return error JSON response", async () => {
-    const lb = new LoadBalancer([]);
+    const monitor = new HealthMonitor();
+    const lb = new LoadBalancer("my-provider", "/my-provider", [], monitor);
     const headers = new Headers();
 
     const response = await lb.forwardRequest("/test", "", "GET", headers);
@@ -87,17 +123,33 @@ describe("Request Forwarding", () => {
     expect(json.error).toBe("No backends available");
   });
 
-  it("should handle connection errors gracefully", async () => {
+  it("should mask backend HTTP errors as 500", async () => {
+    const monitor = new HealthMonitor();
+    const backends = [
+      {
+        name: "error-backend",
+        url: "https://httpbin.org/status/418",
+      },
+    ];
+    const lb = new LoadBalancer("my-provider", "/my-provider", backends, monitor);
+    const response = await lb.forwardRequest("/test", "", "GET", new Headers());
+
+    expect(response.status).toBe(500);
+    const body = await response.text();
+    expect(JSON.parse(body).error).toBe("Internal Server Error");
+  });
+
+  it("should mask connection errors as 500", async () => {
     const backends = [
       { name: "unreachable", url: "http://invalid-domain-xyz-12345.local" },
     ];
-
-    const lb = new LoadBalancer(backends);
+    const monitor = new HealthMonitor();
+    const lb = new LoadBalancer("my-provider", "/my-provider", backends, monitor);
     const headers = new Headers();
 
     const response = await lb.forwardRequest("/test", "", "GET", headers);
 
-    expect(response.status >= 502).toBe(true);
+    expect(response.status).toBe(500);
   });
 });
 
@@ -233,8 +285,8 @@ describe("Response Status Codes", () => {
     });
   });
 
-  it("should return 502 for backend errors", () => {
-    expect(502).toBe(502);
+  it("should return 500 for masked backend errors", () => {
+    expect(500).toBe(500);
   });
 
   it("should return 503 for unavailable backends", () => {
@@ -262,7 +314,8 @@ describe("Multiple Backends Distribution", () => {
       { name: "backend-4", url: "http://b4" },
     ];
 
-    const lb = new LoadBalancer(backends);
+    const monitor = new HealthMonitor();
+    const lb = new LoadBalancer("my-provider", "/my-provider", backends, monitor);
 
     expect(lb.getAllBackends()).toHaveLength(4);
     expect(lb.getNextBackend()).toBeDefined();

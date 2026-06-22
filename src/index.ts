@@ -1,75 +1,131 @@
 import { loadConfig } from "./config";
-import { LoadBalancer } from "./loadBalancer";
-import { startHealthCheckInterval, initializeHealthStatus, getBackendStats } from "./healthCheck";
+import { HealthMonitor } from "./healthCheck";
+import type { MonitoredBackend } from "./healthCheck";
+import { Provider } from "./loadBalancer";
 
 const configPath = process.env.CONFIG_PATH || "config.json";
 
+function selectProvider(providers: Provider[], pathname: string): Provider | undefined {
+  // Prefer the longest (most specific) matching prefix.
+  let matched: Provider | undefined;
+  for (const provider of providers) {
+    if (provider.matches(pathname)) {
+      if (!matched || provider.prefix.length > matched.prefix.length) {
+        matched = provider;
+      }
+    }
+  }
+  return matched;
+}
+
+function createNotFoundResponse(): Response {
+  return new Response(JSON.stringify({ error: "Provider not found" }), {
+    status: 404,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 async function main() {
-	try {
-		const config = await loadConfig(configPath);
-		const lb = new LoadBalancer(config.backends);
+  try {
+    const config = await loadConfig(configPath);
+    const healthMonitor = new HealthMonitor({
+      interval: config.healthCheckInterval,
+    });
 
-		initializeHealthStatus(config.backends);
-		await startHealthCheckInterval(
-			config.backends,
-			config.healthCheckInterval || 30000
-		);
+    const providers = config.providers.map((providerConfig) =>
+      new Provider(providerConfig, healthMonitor)
+    );
 
-		const server = Bun.serve({
-			hostname: config.host,
-			port: config.port,
-			async fetch(request: Request) {
-				const url = new URL(request.url);
-				const pathname = url.pathname;
-				const searchParams = url.search;
-				const method = request.method;
-				const headers = request.headers;
+    const monitoredBackends: MonitoredBackend[] = providers.flatMap((provider) =>
+      provider.backends.map((backend) => ({
+        ...backend,
+        providerName: provider.name,
+      }))
+    );
 
-				// Health check endpoint for load balancer itself
-				if (pathname === "/_health" && method === "GET") {
-					const stats = getBackendStats();
-					const allHealthy = stats.every((s) => s.healthy);
-					const status = allHealthy ? 200 : 503;
+    healthMonitor.start(monitoredBackends);
 
-					return new Response(
-						JSON.stringify({
-							status: allHealthy ? "healthy" : "degraded",
-							backends: stats.map((s) => ({
-								name: s.backendName,
-								healthy: s.healthy,
-								lastCheck: s.lastCheck.toISOString(),
-								consecutiveFailures: s.consecutiveFailures,
-							})),
-						}),
-						{
-							status,
-							headers: { "Content-Type": "application/json" },
-						}
-					);
-				}
+    const server = Bun.serve({
+      hostname: config.host,
+      port: config.port,
+      async fetch(request: Request) {
+        const url = new URL(request.url);
+        const pathname = url.pathname;
+        const method = request.method;
 
-				// Forward all other requests to backends
-				let body: string | undefined;
-				if (request.method !== "GET" && request.method !== "HEAD") {
-					body = await request.text();
-				}
+        if (pathname === "/_health" && method === "GET") {
+          const stats = healthMonitor.getStats();
+          const allHealthy = stats.every((s) => s.healthy);
+          const status = allHealthy ? 200 : 503;
 
-				return lb.forwardRequest(pathname, searchParams, method, headers, body);
-			},
-		});
+          return new Response(
+            JSON.stringify({
+              status: allHealthy ? "healthy" : "degraded",
+              providers: config.providers.map((providerConfig) => ({
+                name: providerConfig.name,
+                prefix: providerConfig.prefix || `/${providerConfig.name}`,
+                backends: stats
+                  .filter((s) => s.providerName === providerConfig.name)
+                  .map((s) => ({
+                    name: s.backendName,
+                    healthy: s.healthy,
+                    lastCheck: s.lastCheck.toISOString(),
+                    consecutiveFailures: s.consecutiveFailures,
+                  })),
+              })),
+            }),
+            {
+              status,
+              headers: { "Content-Type": "application/json" },
+            }
+          );
+        }
 
-		console.log(`🚀 AI Load Balancer started on http://${config.host}:${config.port}`);
-		console.log(`📋 Configuration loaded from: ${configPath}`);
-		console.log(`🔄 Round-robin balancing across ${config.backends.length} backend(s):`);
-		config.backends.forEach((backend, index) => {
-			const proxy = backend.proxy ? ` (via SOCKS5: ${backend.proxy.host}:${backend.proxy.port})` : "";
-			console.log(`   ${index + 1}. ${backend.name}: ${backend.url}${proxy}`);
-		});
-		console.log(`💚 Health check endpoint: http://${config.host}:${config.port}/_health`);
-	} catch (error) {
-		console.error("Failed to start load balancer:", error);
-		process.exit(1);
-	}
+        const provider = selectProvider(providers, pathname);
+
+        if (!provider) {
+          return createNotFoundResponse();
+        }
+
+        let body: string | undefined;
+        if (method !== "GET" && method !== "HEAD") {
+          body = await request.text();
+        }
+
+        return provider.forwardRequest(
+          pathname,
+          url.search,
+          method,
+          request.headers,
+          body
+        );
+      },
+    });
+
+    console.log(`🚀 AI Load Balancer started on http://${config.host}:${config.port}`);
+    console.log(`📋 Configuration loaded from: ${configPath}`);
+    console.log(`🔄 Providers:`);
+    providers.forEach((provider, index) => {
+      const proxySummary = provider.backends
+        .map((b) => (b.proxy ? ` (via SOCKS5: ${b.proxy.host}:${b.proxy.port})` : ""))
+        .join(", ");
+      console.log(
+        `   ${index + 1}. ${provider.name} [${provider.prefix}] -> ${provider.backends.length} backend(s)${proxySummary}`
+      );
+    });
+    console.log(`💚 Health check endpoint: http://${config.host}:${config.port}/_health`);
+
+    // Clean shutdown
+    process.on("SIGINT", () => {
+      console.log("\n🛑 Shutting down...");
+      healthMonitor.stop();
+      server.stop();
+      process.exit(0);
+    });
+  } catch (error) {
+    console.error("Failed to start load balancer:", error);
+    process.exit(1);
+  }
 }
 
 main();

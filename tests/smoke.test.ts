@@ -11,12 +11,12 @@ describe("Smoke Tests", () => {
     it("should import load balancer module", async () => {
       const lb = await import("../src/loadBalancer");
       expect(lb.LoadBalancer).toBeDefined();
+      expect(lb.Provider).toBeDefined();
     });
 
     it("should import health check module", async () => {
       const health = await import("../src/healthCheck");
-      expect(health.initializeHealthStatus).toBeDefined();
-      expect(health.checkBackendHealth).toBeDefined();
+      expect(health.HealthMonitor).toBeDefined();
     });
 
     it("should import http client module", async () => {
@@ -36,48 +36,92 @@ describe("Smoke Tests", () => {
       expect(backend.url).toBeTruthy();
     });
 
+    it("should create valid provider config object", () => {
+      const provider = {
+        name: "my-provider",
+        prefix: "/my-provider",
+        backends: [{ name: "test", url: "http://localhost:8000" }],
+      };
+      expect(provider.name).toBe("my-provider");
+      expect(provider.backends).toHaveLength(1);
+    });
+
     it("should create valid config object", () => {
       const config = {
         port: 3000,
         host: "0.0.0.0",
-        backends: [{ name: "test", url: "http://localhost:8000" }],
+        providers: [
+          {
+            name: "my-provider",
+            backends: [{ name: "test", url: "http://localhost:8000" }],
+          },
+        ],
       };
       expect(config.port).toBe(3000);
-      expect(config.backends).toHaveLength(1);
+      expect(config.providers).toHaveLength(1);
     });
   });
 
   describe("Core Functionality", () => {
-    it("should create LoadBalancer instance", async () => {
-      const { LoadBalancer } = await import("../src/loadBalancer");
-      const lb = new LoadBalancer([
-        { name: "test", url: "http://localhost:8000" },
-      ]);
-      expect(lb).toBeDefined();
+    it("should create Provider instance", async () => {
+      const { Provider } = await import("../src/loadBalancer");
+      const { HealthMonitor } = await import("../src/healthCheck");
+      const monitor = new HealthMonitor();
+      const provider = new Provider(
+        {
+          name: "my-provider",
+          backends: [{ name: "test", url: "http://localhost:8000" }],
+        },
+        monitor
+      );
+      expect(provider).toBeDefined();
+      expect(provider.name).toBe("my-provider");
     });
 
-    it("should get next backend", async () => {
-      const { LoadBalancer } = await import("../src/loadBalancer");
-      const backends = [
-        { name: "backend-1", url: "http://localhost:8001" },
-        { name: "backend-2", url: "http://localhost:8002" },
-      ];
-      const lb = new LoadBalancer(backends);
-      const next = lb.getNextBackend();
+    it("should match request paths", async () => {
+      const { Provider } = await import("../src/loadBalancer");
+      const { HealthMonitor } = await import("../src/healthCheck");
+      const monitor = new HealthMonitor();
+      const provider = new Provider(
+        {
+          name: "my-provider",
+          prefix: "/my-provider",
+          backends: [{ name: "test", url: "http://localhost:8000" }],
+        },
+        monitor
+      );
+      expect(provider.matches("/my-provider")).toBe(true);
+      expect(provider.matches("/my-provider/v1/models")).toBe(true);
+      expect(provider.matches("/other-provider")).toBe(false);
+    });
+
+    it("should get next backend from provider", async () => {
+      const { Provider } = await import("../src/loadBalancer");
+      const { HealthMonitor } = await import("../src/healthCheck");
+      const monitor = new HealthMonitor();
+      const provider = new Provider(
+        {
+          name: "my-provider",
+          backends: [
+            { name: "backend-1", url: "http://localhost:8001" },
+            { name: "backend-2", url: "http://localhost:8002" },
+          ],
+        },
+        monitor
+      );
+      const next = provider.loadBalancer.getNextBackend();
       expect(next).toBeDefined();
       expect(next?.name).toMatch(/backend-/);
     });
 
-    it("should initialize health status", async () => {
-      const { initializeHealthStatus, getBackendStats } = await import(
-        "../src/healthCheck"
-      );
-      const backends = [
-        { name: "test-1", url: "http://localhost:8000" },
-        { name: "test-2", url: "http://localhost:8001" },
-      ];
-      initializeHealthStatus(backends);
-      const stats = getBackendStats();
+    it("should initialize health monitor", async () => {
+      const { HealthMonitor } = await import("../src/healthCheck");
+      const monitor = new HealthMonitor();
+      monitor.initialize([
+        { name: "test-1", url: "http://localhost:8000", providerName: "p1" },
+        { name: "test-2", url: "http://localhost:8001", providerName: "p1" },
+      ]);
+      const stats = monitor.getStats();
       expect(stats).toHaveLength(2);
     });
   });
@@ -93,7 +137,7 @@ describe("Smoke Tests", () => {
       expect(client).toBeDefined();
     });
 
-    it("should support API key in backend", async () => {
+    it("should support API key in backend", () => {
       const backend = {
         name: "test",
         url: "http://localhost:8000",
@@ -102,7 +146,7 @@ describe("Smoke Tests", () => {
       expect(backend.apiKey).toBe("test-key-123");
     });
 
-    it("should support SOCKS5 proxy", async () => {
+    it("should support SOCKS5 proxy", () => {
       const backend = {
         name: "test",
         url: "http://localhost:8000",
@@ -118,23 +162,17 @@ describe("Smoke Tests", () => {
 
   describe("Configuration", () => {
     it("should set default port", () => {
-      const config = {
-        port: 3000,
-      };
+      const config = { port: 3000 };
       expect(config.port).toBe(3000);
     });
 
     it("should set default host", () => {
-      const config = {
-        host: "0.0.0.0",
-      };
+      const config = { host: "0.0.0.0" };
       expect(config.host).toBe("0.0.0.0");
     });
 
     it("should set health check interval", () => {
-      const config = {
-        healthCheckInterval: 30000,
-      };
+      const config = { healthCheckInterval: 30000 };
       expect(config.healthCheckInterval).toBe(30000);
     });
   });
@@ -155,10 +193,10 @@ describe("Smoke Tests", () => {
 
     it("should handle error responses", () => {
       const response = new Response(JSON.stringify({ error: "Backend error" }), {
-        status: 502,
+        status: 500,
         headers: { "Content-Type": "application/json" },
       });
-      expect(response.status).toBe(502);
+      expect(response.status).toBe(500);
     });
   });
 });

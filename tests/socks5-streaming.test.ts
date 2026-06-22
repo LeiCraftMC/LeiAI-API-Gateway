@@ -142,7 +142,6 @@ describe("SOCKS5 Streaming Tests", () => {
         "Content-Type": "application/json",
       });
 
-      // These might be filtered in actual forwarding
       expect(headers.get("Transfer-Encoding")).toBe("chunked");
     });
   });
@@ -154,11 +153,9 @@ describe("SOCKS5 Streaming Tests", () => {
     });
 
     it("should support multiple SOCKS5 authentication methods", () => {
-      // No auth
       const noAuth = { host: "proxy.com", port: 1080 };
       expect(noAuth.port).toBe(1080);
 
-      // With auth
       const withAuth = {
         host: "proxy.com",
         port: 1080,
@@ -174,7 +171,7 @@ describe("SOCKS5 Streaming Tests", () => {
         port: 1080,
       };
 
-      expect(proxy.port).toBe(1080); // Standard SOCKS5 port
+      expect(proxy.port).toBe(1080);
     });
   });
 
@@ -190,7 +187,6 @@ describe("SOCKS5 Streaming Tests", () => {
       };
 
       expect(backend.proxy).toBeDefined();
-      // Connection would fail at runtime, not at config time
     });
 
     it("should handle SOCKS5 timeout", () => {
@@ -203,7 +199,6 @@ describe("SOCKS5 Streaming Tests", () => {
         },
       };
 
-      // Timeout would be handled during request
       expect(backend).toBeDefined();
     });
 
@@ -217,7 +212,6 @@ describe("SOCKS5 Streaming Tests", () => {
         },
       };
 
-      // TLS errors would occur during actual request
       expect(backend).toBeDefined();
     });
   });
@@ -340,7 +334,6 @@ describe("SOCKS5 Streaming Tests", () => {
         proxy: { host: "proxy.com", port: 1080 },
       };
 
-      // Response would have Transfer-Encoding: chunked
       expect(backend.proxy).toBeDefined();
     });
   });

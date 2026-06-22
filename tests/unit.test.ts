@@ -119,7 +119,6 @@ describe("Load Balancing Algorithm", () => {
 
     const results: string[] = [];
     for (let i = 0; i < 10; i++) {
-      // Simulate round-robin
       results.push(backends[i % 2]?.name || "");
     }
 
@@ -143,7 +142,6 @@ describe("Load Balancing Algorithm", () => {
       }
     }
 
-    // With 10 requests across 3 backends: 4, 3, 3 or 3, 4, 3 or 3, 3, 4
     const total = Object.values(distribution).reduce((a, b) => a + b, 0);
     expect(total).toBe(10);
   });
@@ -212,6 +210,7 @@ describe("Header Handling", () => {
     expect(filtered.get("Content-Type")).toBe("application/json");
     expect(filtered.get("Authorization")).toBe("Bearer token");
     expect(filtered.get("Connection")).toBeNull();
+    expect(filtered.get("Keep-Alive")).toBeNull();
   });
 
   it("should preserve important headers", () => {
@@ -270,8 +269,8 @@ describe("Response Status Codes", () => {
 
   it("should identify specific status meanings", () => {
     expect(200).toBe(200); // OK
+    expect(500).toBe(500); // Internal Server Error
     expect(503).toBe(503); // Service Unavailable
-    expect(502).toBe(502); // Bad Gateway
   });
 });
 
