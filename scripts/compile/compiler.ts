@@ -13,7 +13,7 @@ class CompilerCommand {
     public minify = true;
     public bytecode = true;
     public entrypoint = "./scripts/entrypoint.ts";
-    public outfile = "./build/bin/ai-api-load-balancer";
+    public outfile = "./build/bin/leiai-api-gateway";
     public platform: PlatformArg = "auto";
     public env: NodeJS.ProcessEnv = {};
     private additionalArgs: string[] = [];

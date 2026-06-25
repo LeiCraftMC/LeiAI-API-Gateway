@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   load-balancer:
-    image: gcr.leicraftmc.de/leicraftmc/ai-api-load-balancer:latest
+    image: gcr.leicraftmc.de/leicraftmc/leiai/api-gateway:latest
     ports:
       - "3000:3000"
     environment:

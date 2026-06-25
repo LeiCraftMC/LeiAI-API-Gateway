@@ -1,5 +1,5 @@
 {
-	"name": "ai-api-load-balancer",
+	"name": "leiai-api-gateway",
 	"version": "1.0.0",
 	"description": "OpenAI-compatible API load balancer with SOCKS5 support",
 	"main": "src/index.ts",

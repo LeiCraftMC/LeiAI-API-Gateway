@@ -2,12 +2,12 @@ FROM debian:stable-slim
 
 RUN apt-get update && apt-get install -y curl ca-certificates openssl tar bash gpg
 
-WORKDIR /opt/ai-api-load-balancer
+WORKDIR /opt/leiai-api-gateway
 
-COPY ./build/bin/ai-api-load-balancer-linux-x64-baseline /usr/local/bin/ai-api-load-balancer
+COPY ./build/bin/leiai-api-gateway-linux-x64-baseline /usr/local/bin/leiai-api-gateway
 
-RUN chmod u+x /usr/local/bin/ai-api-load-balancer
+RUN chmod u+x /usr/local/bin/leiai-api-gateway
 
 EXPOSE 3000/tcp
 
-ENTRYPOINT ["/usr/local/bin/ai-api-load-balancer"]
+ENTRYPOINT ["/usr/local/bin/leiai-api-gateway"]
