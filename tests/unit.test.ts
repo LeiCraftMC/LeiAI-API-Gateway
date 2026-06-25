@@ -10,7 +10,7 @@ describe("Configuration Types", () => {
 			};
 
 			expect(backend.name).toBe("test-backend");
-			expect(backend.url).toBe("http://localhost:8000");
+			expect(backend.baseUrl).toBe("http://localhost:8000");
 			expect(backend.apiKey).toBeUndefined();
 			expect(backend.proxyUrl).toBeUndefined();
 		});
@@ -65,7 +65,7 @@ describe("Configuration Types", () => {
 				url: "http://localhost:8000",
 			};
 
-			expect(backend.url).toMatch(/^http:\/\//);
+			expect(backend.baseUrl).toMatch(/^http:\/\//);
 		});
 
 		test("should support HTTPS URLs", () => {
@@ -74,7 +74,7 @@ describe("Configuration Types", () => {
 				url: "https://api.example.com",
 			};
 
-			expect(backend.url).toMatch(/^https:\/\//);
+			expect(backend.baseUrl).toMatch(/^https:\/\//);
 		});
 
 		test("should support URLs with ports", () => {
@@ -83,7 +83,7 @@ describe("Configuration Types", () => {
 				url: "http://localhost:9000",
 			};
 
-			expect(backend.url).toContain(":9000");
+			expect(backend.baseUrl).toContain(":9000");
 		});
 
 		test("should support URLs with paths", () => {
@@ -92,7 +92,7 @@ describe("Configuration Types", () => {
 				url: "http://localhost:8000/api/v1",
 			};
 
-			expect(backend.url).toContain("/api/v1");
+			expect(backend.baseUrl).toContain("/api/v1");
 		});
 	});
 });

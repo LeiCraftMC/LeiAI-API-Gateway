@@ -29,7 +29,7 @@ export namespace GatewayConfig.Types {
 
 	export const ProviderBackend = z.object({
 		name: z.string().min(1, "Backend name cannot be empty"),
-		url: z.string().url("Backend URL must be a valid URL"),
+		baseUrl: z.string().url("Backend URL must be a valid URL"),
 		apiKey: z.string().optional(),
 		proxyUrl: z.string().url("Proxy URL must be a valid URL").optional(),
 	});

@@ -84,7 +84,7 @@ export class HealthMonitor {
         });
     }
 
-    public updateHealthStatuses() {
+    async updateHealthStatuses() {
         const now = Date.now();
         for (const [backendID, status] of this.statusMap.entries()) {
             if (!status.healthy && status.timeoutEnds !== null && now >= status.timeoutEnds) {

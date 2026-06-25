@@ -1,7 +1,7 @@
 import { SocksClient } from "socks";
 import { Socket } from "net";
 import * as tls from "tls";
-import { Utils } from ".";
+import { Utils } from "../utils";
 
 interface HttpClientOptions {
 	timeout?: number;
@@ -16,6 +16,7 @@ export interface HttpResponse {
 
 export class BackendAPIClient {
 	private settings: {
+		baseUrl: string;
 		apiKey?: string;
 		proxy?: {
 			host: string;
@@ -25,23 +26,24 @@ export class BackendAPIClient {
 		};
 	}
 
-	constructor(backend: { apiKey?: string; proxyUrl?: string }) {
+	constructor(backend: { apiKey?: string; proxyUrl?: string; baseUrl: string }) {
 		this.settings = {
+			baseUrl: backend.baseUrl,
 			apiKey: backend.apiKey,
 			proxy: backend.proxyUrl ? Utils.parseSocks5Url(backend.proxyUrl) : undefined,
 		};
 	}
 
-	async get(url: string, options?: HttpClientOptions): Promise<HttpResponse | Response> {
-		return this.request(url, { method: "GET", ...options });
+	async get(path: string, options?: HttpClientOptions): Promise<Response> {
+		return this.request(path, { method: "GET", ...options });
 	}
 
 	async post(
-		url: string,
+		path: string,
 		body: string,
 		options?: HttpClientOptions
-	): Promise<HttpResponse | Response> {
-		return this.request(url, {
+	): Promise<Response> {
+		return this.request(path, {
 			method: "POST",
 			body,
 			...options,
@@ -49,9 +51,12 @@ export class BackendAPIClient {
 	}
 
 	async request(
-		url: string,
+		path: string,
 		options?: RequestInit & HttpClientOptions
-	): Promise<HttpResponse | Response> {
+	): Promise<Response> {
+
+		const url = path.startsWith("http") ? path : `${this.settings.baseUrl}${path}`;
+
 		const headers = new Headers(options?.headers || {});
 
 		if (this.settings.apiKey) {

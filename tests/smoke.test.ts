@@ -20,7 +20,7 @@ describe("Smoke Tests", () => {
 		});
 
 		test("should import http client module", async () => {
-			const client = await import("../src/utils/backendAPIClient");
+			const client = await import("../src/loadBalancing/backendAPIClient");
 			expect(client.BackendAPIClient).toBeDefined();
 		});
 	});
@@ -91,7 +91,7 @@ describe("Smoke Tests", () => {
 
 	describe("HTTP Client", () => {
 		test("should create HTTP client", async () => {
-			const { BackendAPIClient } = await import("../src/utils/backendAPIClient");
+			const { BackendAPIClient } = await import("../src/loadBalancing/backendAPIClient");
 			const backend = {
 				name: "test",
 				url: "http://localhost:8000",

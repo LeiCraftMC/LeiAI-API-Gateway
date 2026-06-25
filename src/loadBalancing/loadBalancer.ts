@@ -72,7 +72,7 @@ export class LoadBalancer {
 		}
 
 		const backendPath = stripPrefix(pathname, this.prefix);
-		const backendUrl = new URL(backendPath + searchParams, backend.url).toString();
+		const backendUrl = new URL(backendPath + searchParams, backend.baseUrl).toString();
 
 		const forwardHeaders = this.buildForwardHeaders(headers);
 		const client = new BackendAPIClient(backend);

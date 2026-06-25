@@ -2,7 +2,7 @@ import { describe, test, expect, beforeEach, afterEach, beforeAll, afterAll } fr
 import { Provider } from "../src/loadBalancer";
 import { HealthMonitor } from "../src/loadBalancing/healthMonitor";
 import type { MonitoredBackend } from "../src/loadBalancing/healthMonitor";
-import { BackendAPIClient } from "../src/utils/backendAPIClient";
+import { BackendAPIClient } from "../src/loadBalancing/backendAPIClient";
 import { createFakeOpenAIBackend, closeFakeBackend, type FakeBackend } from "./helpers/fakeOpenAICompatibleAPI";
 
 async function drainText(response: Response): Promise<string> {

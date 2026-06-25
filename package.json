@@ -12,6 +12,7 @@
 		"start": "bun run scripts/entrypoint.ts"
 	},
 	"dependencies": {
+		"cron": "^4.4.0",
 		"hono": "^4.12.27",
 		"socks": "^2.8.9",
 		"zod": "^4.4.3"

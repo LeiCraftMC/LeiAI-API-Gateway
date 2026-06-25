@@ -1,8 +1,8 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import { BackendAPIClient } from "../src/utils/backendAPIClient";
+import { BackendAPIClient } from "../src/loadBalancing/backendAPIClient";
 import { FakeOpenAICompatibleAPI } from "./helpers/fakeOpenAICompatibleAPI";
 import { Socks5Server } from "./helpers/socks5server";
-import type { Backend } from "../src/utils/config/gatewayConfig";
+import type { GatewayConfig } from "../src/utils/config/gatewayConfig";
 
 async function drainText(response: Response): Promise<string> {
 	return response.text();
@@ -11,7 +11,7 @@ async function drainText(response: Response): Promise<string> {
 describe("SOCKS5 Streaming with real servers", () => {
 	let fakeApi: FakeOpenAICompatibleAPI;
 	let socks5: Socks5Server;
-	let backend: Backend;
+	let backend: GatewayConfig.Types.ProviderBackend;
 
 	beforeAll(async () => {
 		socks5 = new Socks5Server();
@@ -23,7 +23,7 @@ describe("SOCKS5 Streaming with real servers", () => {
 
 		backend = {
 			name: "socks-proxied-backend",
-			url: apiUrl,
+			baseUrl: apiUrl,
 			proxyUrl,
 		};
 	});
@@ -36,7 +36,7 @@ describe("SOCKS5 Streaming with real servers", () => {
 	test("should forward a non-streaming request through SOCKS5", async () => {
 		const client = new BackendAPIClient(backend);
 
-		const response = await client.request(`${backend.url}/chat/completions`, {
+		const response = await client.request(`/chat/completions`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({
@@ -54,7 +54,7 @@ describe("SOCKS5 Streaming with real servers", () => {
 	test("should forward a streaming request through SOCKS5", async () => {
 		const client = new BackendAPIClient(backend);
 
-		const response = await client.request(`${backend.url}/chat/completions`, {
+		const response = await client.request(`/chat/completions`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({
@@ -99,7 +99,7 @@ describe("SOCKS5 Streaming with real servers", () => {
 	test("should forward a GET request through SOCKS5", async () => {
 		const client = new BackendAPIClient(backend);
 
-		const response = await client.request(`${backend.url}/models`, {
+		const response = await client.request(`/models`, {
 			method: "GET",
 		});
 
@@ -107,13 +107,13 @@ describe("SOCKS5 Streaming with real servers", () => {
 	});
 
 	test("should apply API key when forwarding through SOCKS5", async () => {
-		const backendWithKey: Backend = {
+		const backendWithKey: GatewayConfig.Types.ProviderBackend = {
 			...backend,
 			apiKey: "sk-test-key-12345",
 		};
 		const client = new BackendAPIClient(backendWithKey);
 
-		const response = await client.request(`${backendWithKey.url}/chat/completions`, {
+		const response = await client.request(`/chat/completions`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({
@@ -129,7 +129,7 @@ describe("SOCKS5 Streaming with real servers", () => {
 describe("SOCKS5 with authentication", () => {
 	let fakeApi: FakeOpenAICompatibleAPI;
 	let socks5: Socks5Server;
-	let backend: Backend;
+	let backend: GatewayConfig.Types.ProviderBackend;
 
 	beforeAll(async () => {
 		socks5 = new Socks5Server("proxyuser", "proxypass");
@@ -141,7 +141,7 @@ describe("SOCKS5 with authentication", () => {
 
 		backend = {
 			name: "auth-socks-backend",
-			url: apiUrl,
+			baseUrl: apiUrl,
 			proxyUrl,
 		};
 	});
@@ -154,7 +154,7 @@ describe("SOCKS5 with authentication", () => {
 	test("should forward requests through authenticated SOCKS5", async () => {
 		const client = new BackendAPIClient(backend);
 
-		const response = await client.request(`${backend.url}/chat/completions`, {
+		const response = await client.request(`/chat/completions`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({
@@ -169,15 +169,15 @@ describe("SOCKS5 with authentication", () => {
 
 describe("SOCKS5 connection failures", () => {
 	test("should fail when SOCKS5 proxy is unreachable", async () => {
-		const backend: Backend = {
+		const backend: GatewayConfig.Types.ProviderBackend = {
 			name: "unreachable-proxy",
-			url: "http://127.0.0.1:9999",
+			baseUrl: "http://127.0.0.1:9999",
 			proxyUrl: "socks5://127.0.0.1:1",
 		};
 
 		const client = new BackendAPIClient(backend);
 		await expect(
-			client.request("http://127.0.0.1:9999/v1/models", { method: "GET" })
+			client.request("/v1/models", { method: "GET" })
 		).rejects.toThrow();
 	});
 });
