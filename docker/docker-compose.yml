@@ -3,6 +3,7 @@ version: '3.8'
 services:
   leiai-api-gateway:
     image: gcr.leicraftmc.de/leicraftmc/leiai/api-gateway:latest
+    container_name: leiai-api-gateway
     ports:
       - "12117:12117"
     environment:
