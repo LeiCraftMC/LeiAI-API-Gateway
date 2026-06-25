@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import type { Backend, SocksProxy } from "../src/utils/config";
+import type { Backend } from "../src/utils/config/gatewayConfig";
 
 describe("Configuration Types", () => {
 	describe("Backend Configuration", () => {
@@ -12,7 +12,7 @@ describe("Configuration Types", () => {
 			expect(backend.name).toBe("test-backend");
 			expect(backend.url).toBe("http://localhost:8000");
 			expect(backend.apiKey).toBeUndefined();
-			expect(backend.proxy).toBeUndefined();
+			expect(backend.proxyUrl).toBeUndefined();
 		});
 
 		test("should create a backend with API key", () => {
@@ -26,36 +26,23 @@ describe("Configuration Types", () => {
 		});
 
 		test("should create a backend with SOCKS5 proxy", () => {
-			const proxy: SocksProxy = {
-				host: "proxy.example.com",
-				port: 1080,
-			};
-
 			const backend: Backend = {
 				name: "remote-backend",
 				url: "http://remote.api.com",
-				proxy,
+				proxyUrl: "socks5://proxy.example.com:1080",
 			};
 
-			expect(backend.proxy?.host).toBe("proxy.example.com");
-			expect(backend.proxy?.port).toBe(1080);
-			expect(backend.proxy?.username).toBeUndefined();
+			expect(backend.proxyUrl).toBe("socks5://proxy.example.com:1080");
 		});
 
 		test("should create a backend with authenticated SOCKS5 proxy", () => {
 			const backend: Backend = {
 				name: "auth-proxy-backend",
 				url: "http://remote.api.com",
-				proxy: {
-					host: "proxy.example.com",
-					port: 1080,
-					username: "user",
-					password: "pass",
-				},
+				proxyUrl: "socks5://user:pass@proxy.example.com:1080",
 			};
 
-			expect(backend.proxy?.username).toBe("user");
-			expect(backend.proxy?.password).toBe("pass");
+			expect(backend.proxyUrl).toBe("socks5://user:pass@proxy.example.com:1080");
 		});
 
 		test("should include health check configuration", () => {

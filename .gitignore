@@ -7,3 +7,6 @@ build/
 .env
 .env.local
 bun.lockb
+
+config/*
+!config/*.example.json

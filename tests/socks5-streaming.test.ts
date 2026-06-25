@@ -1,8 +1,8 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import { BackendAPIClient } from "../src/backendAPIClient";
+import { BackendAPIClient } from "../src/utils/backendAPIClient";
 import { FakeOpenAICompatibleAPI } from "./helpers/fakeOpenAICompatibleAPI";
 import { Socks5Server } from "./helpers/socks5server";
-import type { Backend } from "../src/utils/config";
+import type { Backend } from "../src/utils/config/gatewayConfig";
 
 async function drainText(response: Response): Promise<string> {
 	return response.text();

@@ -1,132 +1,71 @@
-import { loadConfig } from "./utils/config";
-import { HealthMonitor } from "./healthCheck";
-import type { MonitoredBackend } from "./healthCheck";
-import { Provider } from "./loadBalancer";
+import { API } from "./api";
+import { ConfigHandler } from "./utils/config";
 import { Logger } from "./utils/logger";
+import { Utils } from "./utils";
+import { ApiKeysConfig } from "./utils/config/apiKeysConfig";
+import { GatewayConfig } from "./utils/config/gatewayConfig";
 
-const configPath = process.env.CONFIG_PATH || "config.json";
+export class Main {
 
-function selectProvider(providers: Provider[], pathname: string): Provider | undefined {
-	// Prefer the longest (most specific) matching prefix.
-	let matched: Provider | undefined;
-	for (const provider of providers) {
-		if (provider.matches(pathname)) {
-			if (!matched || provider.prefix.length > matched.prefix.length) {
-				matched = provider;
-			}
-		}
-	}
-	return matched;
+    static async main() {
+
+        process.once("SIGINT", (type) => Main.gracefulShutdown(type, 0));
+        process.once("SIGTERM", (type) => Main.gracefulShutdown(type, 0));
+
+        process.once("uncaughtException", Main.handleUncaughtException);
+        process.once("unhandledRejection", Main.handleUnhandledRejection);
+
+        const config = await ConfigHandler.loadConfig();
+		
+		await ApiKeysConfig.loadConfig(config.LAG_CONFIG_BASE_DIR ?? "./config");
+		await GatewayConfig.loadConfig(config.LAG_CONFIG_BASE_DIR ?? "./config");
+
+        Logger.setLogLevel(config.LAG_LOG_LEVEL ?? "info");
+
+        await Utils.ensureDirectoryExists(config.LAG_CONFIG_BASE_DIR ?? "./config");
+
+        await API.init({
+			host: config.LAG_HOST ?? "::",
+			port: parseInt(config.LAG_PORT ?? "12117"),
+		});
+
+        await API.start();
+
+    }
+
+    private static async gracefulShutdown(type: NodeJS.Signals, code: number) {
+        try {
+            Logger.log(`Received ${type}, shutting down...`);
+
+            await API.stop();
+
+            Logger.log("Shutdown complete, exiting.");
+            process.exit(code);
+        } catch {
+            Logger.critical("Error during shutdown, forcing exit");
+            Main.forceShutdown();
+        }
+        }
+
+    private static forceShutdown() {
+        process.once("SIGTERM", ()=>{});
+        process.exit(1);
+    }
+
+    private static async handleUncaughtException(error: Error) {
+        Logger.critical(`Uncaught Exception:\n${Error.isError(error) ? error.stack ? error.stack : error.message : error}`);
+        Main.gracefulShutdown("SIGTERM", 1);
+    }
+
+    private static async handleUnhandledRejection(reason: any) {
+        if (Error.isError(reason)) {
+            // reason is an error
+            return Main.handleUncaughtException(reason);
+        }
+        Logger.critical(`Unhandled Rejection:\n${reason}`);
+        Main.gracefulShutdown("SIGTERM", 1);
+    }
+
 }
 
-function createNotFoundResponse(): Response {
-	return new Response(JSON.stringify({ error: "Provider not found" }), {
-		status: 404,
-		headers: { "Content-Type": "application/json" },
-	});
-}
-
-async function main() {
-	try {
-		const config = await loadConfig(configPath);
-		const healthMonitor = new HealthMonitor({
-			interval: config.healthCheckInterval,
-		});
-
-		const providers = config.providers.map((providerConfig) =>
-			new Provider(providerConfig, healthMonitor)
-		);
-
-		const monitoredBackends: MonitoredBackend[] = providers.flatMap((provider) =>
-			provider.backends.map((backend) => ({
-				...backend,
-				providerName: provider.name,
-			}))
-		);
-
-		healthMonitor.start(monitoredBackends);
-
-		const server = Bun.serve({
-			hostname: config.host,
-			port: config.port,
-			async fetch(request: Request) {
-				const url = new URL(request.url);
-				const pathname = url.pathname;
-				const method = request.method;
-
-				if (pathname === "/_health" && method === "GET") {
-					const stats = healthMonitor.getStats();
-					const allHealthy = stats.every((s) => s.healthy);
-					const status = allHealthy ? 200 : 503;
-
-					return new Response(
-						JSON.stringify({
-							status: allHealthy ? "healthy" : "degraded",
-							providers: config.providers.map((providerConfig) => ({
-								name: providerConfig.name,
-								prefix: providerConfig.prefix || `/${providerConfig.name}`,
-								backends: stats
-									.filter((s) => s.providerName === providerConfig.name)
-									.map((s) => ({
-										name: s.backendName,
-										healthy: s.healthy,
-										lastCheck: s.lastCheck.toISOString(),
-										consecutiveFailures: s.consecutiveFailures,
-									})),
-							})),
-						}),
-						{
-							status,
-							headers: { "Content-Type": "application/json" },
-						}
-					);
-				}
-
-				const provider = selectProvider(providers, pathname);
-
-				if (!provider) {
-					return createNotFoundResponse();
-				}
-
-				let body: string | undefined;
-				if (method !== "GET" && method !== "HEAD") {
-					body = await request.text();
-				}
-
-				return provider.forwardRequest(
-					pathname,
-					url.search,
-					method,
-					request.headers,
-					body
-				);
-			},
-		});
-
-		Logger.log(`🚀 AI Load Balancer started on http://${config.host}:${config.port}`);
-		Logger.log(`📋 Configuration loaded from: ${configPath}`);
-		Logger.log(`🔄 Providers:`);
-		providers.forEach((provider, index) => {
-			const proxySummary = provider.backends
-				.map((b) => (b.proxy ? ` (via SOCKS5: ${b.proxy.host}:${b.proxy.port})` : ""))
-				.join(", ");
-			Logger.log(
-				`   ${index + 1}. ${provider.name} [${provider.prefix}] -> ${provider.backends.length} backend(s)${proxySummary}`
-			);
-		});
-		Logger.log(`💚 Health check endpoint: http://${config.host}:${config.port}/_health`);
-
-		// Clean shutdown
-		process.on("SIGINT", () => {
-			Logger.log("\n🛑 Shutting down...");
-			healthMonitor.stop();
-			server.stop();
-			process.exit(0);
-		});
-	} catch (error) {
-		Logger.error("Failed to start load balancer:", error);
-		process.exit(1);
-	}
-}
-
-main();
+Main.main()

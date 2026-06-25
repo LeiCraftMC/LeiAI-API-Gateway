@@ -1,0 +1,11 @@
+{
+    "my_apikey_1": {
+        "description": "This is my first API key",
+        "allowedModels": ["gpt-4", "gpt-3.5-turbo"]
+    },
+    "my_apikey_2": {
+        "description": "This is my second API key",
+        "denyModels": ["gpt-4"]
+    },
+    "my_apikey_3": {}
+}

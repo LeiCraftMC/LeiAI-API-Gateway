@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { LoadBalancer, Provider } from "../src/loadBalancer";
-import { HealthMonitor } from "../src/healthCheck";
-import type { Backend } from "../src/utils/config";
+import { HealthMonitor } from "../src/loadBalancing/healthMonitor";
+import type { Backend } from "../src/utils/config/gatewayConfig";
 
 describe("LoadBalancer Core Functionality", () => {
 	describe("Round-robin routing", () => {
@@ -209,16 +209,7 @@ describe("Backend Configuration", () => {
 		const backend: Backend = {
 			name: "proxied",
 			url: "http://remote.com",
-			proxy: {
-				host: "proxy.example.com",
-				port: 1080,
-				username: "user",
-				password: "pass",
-			},
-		};
-
-		expect(backend.proxy?.host).toBe("proxy.example.com");
-		expect(backend.proxy?.port).toBe(1080);
+			proxyUrl: "socks5://proxy.example.com:1080",
 	});
 
 	test("should support custom health check paths", () => {

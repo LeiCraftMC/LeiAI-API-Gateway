@@ -1,14 +1,9 @@
-import type { Backend, ProviderConfig } from "./utils/config";
-import type { HealthMonitor, MonitoredBackend } from "./healthCheck";
+import type { Backend, GatewayConfig } from "./utils/config/gatewayConfig";
+import type { HealthMonitor, MonitoredBackend } from "./healthMonitor";
 import { BackendAPIClient } from "./backendAPIClient";
 import { Logger } from "./utils/logger";
 
-const HOP_BY_HOP_HEADERS = new Set([
-	"connection",
-	"keep-alive",
-	"transfer-encoding",
-	"upgrade",
-]);
+
 
 /** Build a backend-relative path by stripping the provider prefix. */
 function stripPrefix(pathname: string, prefix: string): string {
@@ -156,7 +151,7 @@ export class Provider {
 	public readonly backends: Backend[];
 	public readonly loadBalancer: LoadBalancer;
 
-	constructor(config: ProviderConfig, healthMonitor: HealthMonitor) {
+	constructor(config: GatewayConfig, healthMonitor: HealthMonitor) {
 		this.name = config.name;
 		this.prefix = config.prefix || `/${config.name}`;
 		this.backends = config.backends;

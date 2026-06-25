@@ -1,8 +1,7 @@
-import type { Backend } from "./utils/config";
 import { SocksClient } from "socks";
 import { Socket } from "net";
 import * as tls from "tls";
-import { Utils } from "./utils";
+import { Utils } from ".";
 
 interface HttpClientOptions {
 	timeout?: number;
@@ -26,10 +25,7 @@ export class BackendAPIClient {
 		};
 	}
 
-	constructor(backend: {
-		apiKey?: string;
-		proxyUrl?: string
-	}) {
+	constructor(backend: { apiKey?: string; proxyUrl?: string }) {
 		this.settings = {
 			apiKey: backend.apiKey,
 			proxy: backend.proxyUrl ? Utils.parseSocks5Url(backend.proxyUrl) : undefined,

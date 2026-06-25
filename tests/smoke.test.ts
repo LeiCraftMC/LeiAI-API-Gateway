@@ -4,7 +4,7 @@ import { describe, test, expect } from "bun:test";
 describe("Smoke Tests", () => {
 	describe("Imports", () => {
 		test("should import config module", async () => {
-			const config = await import("../src/utils/config");
+			const config = await import("../src/utils/config/gatewayConfig");
 			expect(config.loadConfig).toBeDefined();
 		});
 
@@ -15,12 +15,12 @@ describe("Smoke Tests", () => {
 		});
 
 		test("should import health check module", async () => {
-			const health = await import("../src/healthCheck");
+			const health = await import("../src/loadBalancing/healthMonitor");
 			expect(health.HealthMonitor).toBeDefined();
 		});
 
 		test("should import http client module", async () => {
-			const client = await import("../src/backendAPIClient");
+			const client = await import("../src/utils/backendAPIClient");
 			expect(client.BackendAPIClient).toBeDefined();
 		});
 	});
@@ -28,7 +28,7 @@ describe("Smoke Tests", () => {
 	describe("Core Functionality", () => {
 		test("should create Provider instance", async () => {
 			const { Provider } = await import("../src/loadBalancer");
-			const { HealthMonitor } = await import("../src/healthCheck");
+			const { HealthMonitor } = await import("../src/loadBalancing/healthMonitor");
 			const monitor = new HealthMonitor();
 			const provider = new Provider(
 				{
@@ -43,7 +43,7 @@ describe("Smoke Tests", () => {
 
 		test("should match request paths", async () => {
 			const { Provider } = await import("../src/loadBalancer");
-			const { HealthMonitor } = await import("../src/healthCheck");
+			const { HealthMonitor } = await import("../src/loadBalancing/healthMonitor");
 			const monitor = new HealthMonitor();
 			const provider = new Provider(
 				{
@@ -60,7 +60,7 @@ describe("Smoke Tests", () => {
 
 		test("should get next backend from provider", async () => {
 			const { Provider } = await import("../src/loadBalancer");
-			const { HealthMonitor } = await import("../src/healthCheck");
+			const { HealthMonitor } = await import("../src/loadBalancing/healthMonitor");
 			const monitor = new HealthMonitor();
 			const provider = new Provider(
 				{
@@ -78,7 +78,7 @@ describe("Smoke Tests", () => {
 		});
 
 		test("should initialize health monitor", async () => {
-			const { HealthMonitor } = await import("../src/healthCheck");
+			const { HealthMonitor } = await import("../src/loadBalancing/healthMonitor");
 			const monitor = new HealthMonitor();
 			monitor.initialize([
 				{ name: "test-1", url: "http://localhost:8000", providerName: "p1" },
@@ -91,7 +91,7 @@ describe("Smoke Tests", () => {
 
 	describe("HTTP Client", () => {
 		test("should create HTTP client", async () => {
-			const { BackendAPIClient } = await import("../src/backendAPIClient");
+			const { BackendAPIClient } = await import("../src/utils/backendAPIClient");
 			const backend = {
 				name: "test",
 				url: "http://localhost:8000",

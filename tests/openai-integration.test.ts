@@ -1,8 +1,8 @@
 import { describe, test, expect, beforeEach, afterEach, beforeAll, afterAll } from "bun:test";
 import { Provider } from "../src/loadBalancer";
-import { HealthMonitor } from "../src/healthCheck";
-import type { MonitoredBackend } from "../src/healthCheck";
-import { BackendAPIClient } from "../src/backendAPIClient";
+import { HealthMonitor } from "../src/loadBalancing/healthMonitor";
+import type { MonitoredBackend } from "../src/loadBalancing/healthMonitor";
+import { BackendAPIClient } from "../src/utils/backendAPIClient";
 import { createFakeOpenAIBackend, closeFakeBackend, type FakeBackend } from "./helpers/fakeOpenAICompatibleAPI";
 
 async function drainText(response: Response): Promise<string> {
@@ -429,7 +429,7 @@ describe("OpenAI-Compatible Full Server Integration", () => {
 		fake2 = createFakeOpenAIBackend({ apiKey: "sk-two", model: "model-two" });
 
 		const { Provider } = await import("../src/loadBalancer");
-		const { HealthMonitor } = await import("../src/healthCheck");
+		const { HealthMonitor } = await import("../src/loadBalancing/healthMonitor");
 		const monitor = new HealthMonitor({ interval: 60_000 });
 
 		const providers = [
