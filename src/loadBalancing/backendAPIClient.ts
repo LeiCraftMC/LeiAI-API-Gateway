@@ -34,6 +34,10 @@ export class BackendAPIClient {
 		};
 	}
 
+	public getBaseUrl(): string {
+		return this.settings.baseUrl
+	}
+
 	async get(path: string, options?: HttpClientOptions): Promise<Response> {
 		return this.request(path, { method: "GET", ...options });
 	}

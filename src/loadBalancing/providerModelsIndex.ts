@@ -23,7 +23,7 @@ export class ProviderModelsIndex {
             try {
                 const response = await apiClient.get("/models");
                 if (!response.ok) {
-                    Logger.warn(`Failed to fetch models from backend: ${response.status}, (Path: ${response.url})`);
+                    Logger.warn(`Failed to fetch models from backend (${apiClient.getBaseUrl()}/models): ${response.status},`);
                     continue;
                 }
                 const data = (await response.json()) as {
@@ -46,7 +46,7 @@ export class ProviderModelsIndex {
                     newModels.push(newModelsforThisBackend);
                 }
             } catch (error) {
-                Logger.error(`Error fetching models from backend:`, error);
+                Logger.error(`Error fetching models from backend (${apiClient.getBaseUrl()}/models):`, error);
             }
         }
 
