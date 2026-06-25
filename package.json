@@ -12,7 +12,8 @@
 		"start": "bun run scripts/entrypoint.ts"
 	},
 	"dependencies": {
-		"socks": "^2.8.1"
+		"socks": "^2.8.1",
+		"zod": "^4.4.3"
 	},
 	"devDependencies": {
 		"@cleverjs/cli": "^2.4.0",
