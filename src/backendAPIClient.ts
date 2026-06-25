@@ -2,6 +2,7 @@ import type { Backend } from "./utils/config";
 import { SocksClient } from "socks";
 import { Socket } from "net";
 import * as tls from "tls";
+import { Utils } from "./utils";
 
 interface HttpClientOptions {
 	timeout?: number;
@@ -14,11 +15,25 @@ export interface HttpResponse {
 	headers: Headers;
 }
 
-export class HttpClient {
-	private backend: Backend;
+export class BackendAPIClient {
+	private settings: {
+		apiKey?: string;
+		proxy?: {
+			host: string;
+			port: number;
+			username?: string;
+			password?: string;
+		};
+	}
 
-	constructor(backend: Backend) {
-		this.backend = backend;
+	constructor(backend: {
+		apiKey?: string;
+		proxyUrl?: string
+	}) {
+		this.settings = {
+			apiKey: backend.apiKey,
+			proxy: backend.proxyUrl ? Utils.parseSocks5Url(backend.proxyUrl) : undefined,
+		};
 	}
 
 	async get(url: string, options?: HttpClientOptions): Promise<HttpResponse | Response> {
@@ -43,13 +58,13 @@ export class HttpClient {
 	): Promise<HttpResponse | Response> {
 		const headers = new Headers(options?.headers || {});
 
-		if (this.backend.apiKey) {
-			headers.set("Authorization", `Bearer ${this.backend.apiKey}`);
+		if (this.settings.apiKey) {
+			headers.set("Authorization", `Bearer ${this.settings.apiKey}`);
 		}
 
 		headers.set("User-Agent", "AI-Load-Balancer/1.0");
 
-		if (this.backend.proxy) {
+		if (this.settings.proxy) {
 			return this.requestViaSocks(url, headers, options);
 		}
 
@@ -87,7 +102,7 @@ export class HttpClient {
 		headers: Headers,
 		options?: RequestInit & HttpClientOptions
 	): Promise<Response> {
-		const proxy = this.backend.proxy!;
+		const proxy = this.settings.proxy!;
 		const parsedUrl = new URL(url);
 		const isHttps = parsedUrl.protocol === "https:";
 		const port = parseInt(parsedUrl.port || (isHttps ? "443" : "80"));
@@ -110,7 +125,7 @@ export class HttpClient {
 
 			// For HTTPS through SOCKS5, we need to establish a TLS tunnel
 			if (isHttps) {
-				return this.requestViaSocksTLS(socket.socket, url, headers, options, parsedUrl);
+				return this.requestViaSocksHTTPS(socket.socket, url, headers, options, parsedUrl);
 			}
 
 			return this.requestViaSocksHTTP(socket.socket, url, headers, options, parsedUrl);
@@ -231,7 +246,7 @@ export class HttpClient {
 		});
 	}
 
-	private async requestViaSocksTLS(
+	private async requestViaSocksHTTPS(
 		socket: Socket,
 		url: string,
 		headers: Headers,
@@ -347,8 +362,4 @@ export class HttpClient {
 			});
 		});
 	}
-}
-
-export function createHttpClient(backend: Backend): HttpClient {
-	return new HttpClient(backend);
 }

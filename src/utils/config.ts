@@ -1,15 +1,9 @@
-export interface SocksProxy {
-  host: string;
-  port: number;
-  username?: string;
-  password?: string;
-}
 
 export interface Backend {
   name: string;
   url: string;
   apiKey?: string;
-  proxy?: SocksProxy;
+  proxyUrl?: string;
   healthCheckPath?: string;
   healthCheckInterval?: number;
 }

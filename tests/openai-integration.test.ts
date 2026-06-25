@@ -2,8 +2,8 @@ import { describe, test, expect, beforeEach, afterEach, beforeAll, afterAll } fr
 import { Provider } from "../src/loadBalancer";
 import { HealthMonitor } from "../src/healthCheck";
 import type { MonitoredBackend } from "../src/healthCheck";
-import { HttpClient } from "../src/httpClient";
-import { createFakeOpenAIBackend, closeFakeBackend, type FakeBackend } from "./fakeOpenAI";
+import { BackendAPIClient } from "../src/backendAPIClient";
+import { createFakeOpenAIBackend, closeFakeBackend, type FakeBackend } from "./helpers/fakeOpenAICompatibleAPI";
 
 async function drainText(response: Response): Promise<string> {
 	return response.text();
@@ -343,7 +343,7 @@ describe("OpenAI-Compatible Fake Backend Integration", () => {
 			fake = createFakeOpenAIBackend({ apiKey: "sk-fake", delayMs: 200 });
 
 			const backend = fake.toBackendConfig("slow-backend");
-			const client = new HttpClient(backend);
+			const client = new BackendAPIClient(backend);
 
 			const logs: string[] = [];
 			const originalError = console.error;

@@ -35,6 +35,37 @@ export class Utils {
         return new Promise<void>(resolve => setTimeout(() => resolve(), ms));
     }
 
+    static parseSocks5Url(proxyUrl: string) {
+        try {
+            const parsed = new URL(proxyUrl);
+
+            // Validate Protocol
+            if (!parsed.protocol.startsWith("socks5")) {
+                throw new Error(`Invalid protocol: ${parsed.protocol}. Expected "socks5" or "socks5h"`);
+            }
+
+            // Extract Authentication
+            const user = parsed.username ? decodeURIComponent(parsed.username) : undefined;
+            const password = parsed.password ? decodeURIComponent(parsed.password) : undefined;
+
+            // Extract Host
+            let host = parsed.hostname;
+            // URL class keeps brackets for IPv6 (e.g. "[::1]"), but net.connect needs raw IP
+            if (host.startsWith("[") && host.endsWith("]")) {
+                host = host.slice(1, -1);
+            }
+
+            // Extract Port
+            const port = parsed.port ? parseInt(parsed.port, 10) : 1080;
+
+            return { host, port, username: user, password };
+        } catch (err) {
+            throw new Error(
+                `Invalid SOCKS5 URL: ${proxyUrl}. Error: ${(err as Error).message}`,
+            );
+        }
+    }
+
 
     static ensureDirectoryExists(path: string) {
         try {

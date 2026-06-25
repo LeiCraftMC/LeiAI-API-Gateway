@@ -20,45 +20,8 @@ describe("Smoke Tests", () => {
 		});
 
 		test("should import http client module", async () => {
-			const client = await import("../src/httpClient");
-			expect(client.HttpClient).toBeDefined();
-			expect(client.createHttpClient).toBeDefined();
-		});
-	});
-
-	describe("Basic Types", () => {
-		test("should create valid backend object", () => {
-			const backend = {
-				name: "test",
-				url: "http://localhost:8000",
-			};
-			expect(backend.name).toBeTruthy();
-			expect(backend.url).toBeTruthy();
-		});
-
-		test("should create valid provider config object", () => {
-			const provider = {
-				name: "my-provider",
-				prefix: "/my-provider",
-				backends: [{ name: "test", url: "http://localhost:8000" }],
-			};
-			expect(provider.name).toBe("my-provider");
-			expect(provider.backends).toHaveLength(1);
-		});
-
-		test("should create valid config object", () => {
-			const config = {
-				port: 3000,
-				host: "0.0.0.0",
-				providers: [
-					{
-						name: "my-provider",
-						backends: [{ name: "test", url: "http://localhost:8000" }],
-					},
-				],
-			};
-			expect(config.port).toBe(3000);
-			expect(config.providers).toHaveLength(1);
+			const client = await import("../src/backendAPIClient");
+			expect(client.BackendAPIClient).toBeDefined();
 		});
 	});
 
@@ -128,75 +91,13 @@ describe("Smoke Tests", () => {
 
 	describe("HTTP Client", () => {
 		test("should create HTTP client", async () => {
-			const { createHttpClient } = await import("../src/httpClient");
+			const { BackendAPIClient } = await import("../src/backendAPIClient");
 			const backend = {
 				name: "test",
 				url: "http://localhost:8000",
 			};
-			const client = createHttpClient(backend);
+			const client = new BackendAPIClient(backend);
 			expect(client).toBeDefined();
-		});
-
-		test("should support API key in backend", () => {
-			const backend = {
-				name: "test",
-				url: "http://localhost:8000",
-				apiKey: "test-key-123",
-			};
-			expect(backend.apiKey).toBe("test-key-123");
-		});
-
-		test("should support SOCKS5 proxy", () => {
-			const backend = {
-				name: "test",
-				url: "http://localhost:8000",
-				proxy: {
-					host: "proxy.example.com",
-					port: 1080,
-				},
-			};
-			expect(backend.proxy?.host).toBe("proxy.example.com");
-			expect(backend.proxy?.port).toBe(1080);
-		});
-	});
-
-	describe("Configuration", () => {
-		test("should set default port", () => {
-			const config = { port: 3000 };
-			expect(config.port).toBe(3000);
-		});
-
-		test("should set default host", () => {
-			const config = { host: "0.0.0.0" };
-			expect(config.host).toBe("0.0.0.0");
-		});
-
-		test("should set health check interval", () => {
-			const config = { healthCheckInterval: 30000 };
-			expect(config.healthCheckInterval).toBe(30000);
-		});
-	});
-
-	describe("Response Handling", () => {
-		test("should create Response with status", () => {
-			const response = new Response("test", { status: 200 });
-			expect(response.status).toBe(200);
-		});
-
-		test("should create Response with headers", () => {
-			const response = new Response("test", {
-				status: 200,
-				headers: { "Content-Type": "application/json" },
-			});
-			expect(response.headers.get("Content-Type")).toBe("application/json");
-		});
-
-		test("should handle error responses", () => {
-			const response = new Response(JSON.stringify({ error: "Backend error" }), {
-				status: 500,
-				headers: { "Content-Type": "application/json" },
-			});
-			expect(response.status).toBe(500);
 		});
 	});
 });

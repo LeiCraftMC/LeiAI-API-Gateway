@@ -1,5 +1,5 @@
 import type { Backend } from "./utils/config";
-import { createHttpClient } from "./httpClient";
+import { BackendAPIClient } from "./backendAPIClient";
 import { Logger } from "./utils/logger";
 
 export interface HealthStatus {
@@ -65,7 +65,7 @@ export class HealthMonitor {
         const status = this.statusMap.get(key);
         const healthPath = backend.healthCheckPath || "/v1/models";
         const url = new URL(healthPath, backend.url).toString();
-        const client = createHttpClient(backend);
+        const client = new BackendAPIClient(backend);
 
         try {
             const response = await client.request(url, {

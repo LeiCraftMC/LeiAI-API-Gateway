@@ -1,340 +1,183 @@
-import { describe, test, expect } from "bun:test";
-import { HttpClient, createHttpClient } from "../src/httpClient";
-import type { Backend, SocksProxy } from "../src/utils/config";
+import { describe, test, expect, beforeAll, afterAll } from "bun:test";
+import { BackendAPIClient } from "../src/backendAPIClient";
+import { FakeOpenAICompatibleAPI } from "./helpers/fakeOpenAICompatibleAPI";
+import { Socks5Server } from "./helpers/socks5server";
+import type { Backend } from "../src/utils/config";
 
-describe("SOCKS5 Streaming Tests", () => {
-	describe("SOCKS5 Configuration Validation", () => {
-		test("should create backend with SOCKS5 proxy", () => {
-			const proxy: SocksProxy = {
-				host: "proxy.example.com",
-				port: 1080,
-			};
+async function drainText(response: Response): Promise<string> {
+	return response.text();
+}
 
-			const backend: Backend = {
-				name: "socks-backend",
-				url: "http://remote.api.com:8000",
-				proxy,
-			};
+describe("SOCKS5 Streaming with real servers", () => {
+	let fakeApi: FakeOpenAICompatibleAPI;
+	let socks5: Socks5Server;
+	let backend: Backend;
 
-			expect(backend.proxy).toBeDefined();
-			expect(backend.proxy?.host).toBe("proxy.example.com");
-			expect(backend.proxy?.port).toBe(1080);
-		});
+	beforeAll(async () => {
+		socks5 = new Socks5Server();
+		await socks5.start();
+		const proxyUrl = socks5.getUrl();
 
-		test("should support authenticated SOCKS5", () => {
-			const backend: Backend = {
-				name: "auth-socks",
-				url: "http://remote.com",
-				proxy: {
-					host: "proxy.example.com",
-					port: 1080,
-					username: "user",
-					password: "pass",
-				},
-			};
+		fakeApi = new FakeOpenAICompatibleAPI();
+		const apiUrl = await fakeApi.start();
 
-			expect(backend.proxy?.username).toBe("user");
-			expect(backend.proxy?.password).toBe("pass");
-		});
-
-		test("should support backend with API key and SOCKS5", () => {
-			const backend: Backend = {
-				name: "secure-socks",
-				url: "http://remote.com",
-				apiKey: "test-key",
-				proxy: {
-					host: "proxy.example.com",
-					port: 1080,
-				},
-			};
-
-			expect(backend.apiKey).toBe("test-key");
-			expect(backend.proxy?.host).toBe("proxy.example.com");
-		});
+		backend = {
+			name: "socks-proxied-backend",
+			url: apiUrl,
+			proxyUrl,
+		};
 	});
 
-	describe("HTTP Client Creation with SOCKS5", () => {
-		test("should create HTTP client for SOCKS5 backend", () => {
-			const backend: Backend = {
-				name: "socks-test",
-				url: "http://localhost:9000",
-				proxy: {
-					host: "localhost",
-					port: 1080,
-				},
-			};
-
-			const client = createHttpClient(backend);
-			expect(client).toBeDefined();
-			expect(client instanceof HttpClient).toBe(true);
-		});
-
-		test("should create HTTP client for HTTPS over SOCKS5", () => {
-			const backend: Backend = {
-				name: "secure-socks",
-				url: "https://api.example.com",
-				proxy: {
-					host: "proxy.example.com",
-					port: 1080,
-				},
-			};
-
-			const client = createHttpClient(backend);
-			expect(client).toBeDefined();
-		});
+	afterAll(async () => {
+		await fakeApi.stop();
+		await socks5.stop();
 	});
 
-	describe("SOCKS5 URL Handling", () => {
-		test("should handle HTTP URLs over SOCKS5", () => {
-			const url = "http://remote-backend.com:8000";
-			const parsed = new URL(url);
+	test("should forward a non-streaming request through SOCKS5", async () => {
+		const client = new BackendAPIClient(backend);
 
-			expect(parsed.protocol).toBe("http:");
-			expect(parsed.hostname).toBe("remote-backend.com");
-			expect(parsed.port).toBe("8000");
-		});
-
-		test("should handle HTTPS URLs over SOCKS5", () => {
-			const url = "https://api.example.com";
-			const parsed = new URL(url);
-
-			expect(parsed.protocol).toBe("https:");
-			expect(parsed.hostname).toBe("api.example.com");
-			expect(parsed.port).toBe("");
-		});
-
-		test("should preserve paths in SOCKS5 requests", () => {
-			const baseUrl = "http://remote.com";
-			const path = "/v1/chat/completions?stream=true";
-
-			const full = new URL(path, baseUrl).toString();
-
-			expect(full).toContain("/v1/chat/completions");
-			expect(full).toContain("stream=true");
-		});
-	});
-
-	describe("Streaming Configuration for SOCKS5", () => {
-		test("should support streaming headers over SOCKS5", () => {
-			const headers = new Headers({
-				"Content-Type": "application/json",
-				Accept: "text/event-stream",
-			});
-
-			expect(headers.get("Accept")).toBe("text/event-stream");
-			expect(headers.get("Content-Type")).toBe("application/json");
-		});
-
-		test("should preserve streaming request body", () => {
-			const body = JSON.stringify({
+		const response = await client.request(`${backend.url}/chat/completions`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
 				model: "gpt-4",
-				messages: [{ role: "user", content: "test" }],
-				stream: true,
-			});
-
-			expect(body).toContain("stream");
-			expect(body).toContain("true");
+				messages: [{ role: "user", content: "Hi" }],
+			}),
 		});
 
-		test("should handle chunked encoding headers", () => {
-			const headers = new Headers({
-				"Transfer-Encoding": "chunked",
-				"Content-Type": "application/json",
-			});
-
-			expect(headers.get("Transfer-Encoding")).toBe("chunked");
-		});
+		expect(response.status).toBe(200);
+		// @ts-ignore
+		const json = (await response.json()) as Record<string, unknown>;
+		expect(json.object).toBe("chat.completion");
 	});
 
-	describe("SOCKS5 Protocol Support", () => {
-		test("should support SOCKS5 version 5", () => {
-			const socksVersion = 5;
-			expect(socksVersion).toBe(5);
-		});
+	test("should forward a streaming request through SOCKS5", async () => {
+		const client = new BackendAPIClient(backend);
 
-		test("should support multiple SOCKS5 authentication methods", () => {
-			const noAuth = { host: "proxy.com", port: 1080 };
-			expect(noAuth.port).toBe(1080);
-
-			const withAuth = {
-				host: "proxy.com",
-				port: 1080,
-				username: "user",
-				password: "pass",
-			};
-			expect(withAuth.username).toBeDefined();
-		});
-
-		test("should verify SOCKS5 port is correct", () => {
-			const proxy = {
-				host: "proxy.example.com",
-				port: 1080,
-			};
-
-			expect(proxy.port).toBe(1080);
-		});
-	});
-
-	describe("SOCKS5 + Streaming Error Handling", () => {
-		test("should handle SOCKS5 connection errors", () => {
-			const backend: Backend = {
-				name: "bad-socks",
-				url: "http://remote.com",
-				proxy: {
-					host: "invalid-proxy.local",
-					port: 1080,
-				},
-			};
-
-			expect(backend.proxy).toBeDefined();
-		});
-
-		test("should handle SOCKS5 timeout", () => {
-			const backend: Backend = {
-				name: "slow-socks",
-				url: "http://remote.com",
-				proxy: {
-					host: "slow-proxy.example.com",
-					port: 1080,
-				},
-			};
-
-			expect(backend).toBeDefined();
-		});
-
-		test("should handle TLS errors in SOCKS5 HTTPS", () => {
-			const backend: Backend = {
-				name: "tls-error-socks",
-				url: "https://self-signed.example.com",
-				proxy: {
-					host: "proxy.example.com",
-					port: 1080,
-				},
-			};
-
-			expect(backend).toBeDefined();
-		});
-	});
-
-	describe("SOCKS5 with Backend Features", () => {
-		test("should combine API key with SOCKS5 streaming", () => {
-			const backend: Backend = {
-				name: "full-featured",
-				url: "https://remote-api.com",
-				apiKey: "sk-example",
-				proxy: {
-					host: "proxy.com",
-					port: 1080,
-					username: "proxyuser",
-					password: "proxypass",
-				},
-				healthCheckPath: "/health",
-				healthCheckInterval: 30000,
-			};
-
-			expect(backend.apiKey).toBeDefined();
-			expect(backend.proxy).toBeDefined();
-			expect(backend.healthCheckPath).toBe("/health");
-		});
-
-		test("should verify HTTP method forwarding over SOCKS5", () => {
-			const methods = ["GET", "POST", "PUT", "DELETE"];
-			const backend: Backend = {
-				name: "test",
-				url: "http://remote.com",
-				proxy: { host: "proxy.com", port: 1080 },
-			};
-
-			methods.forEach((method) => {
-				expect(typeof method).toBe("string");
-			});
-			expect(backend.proxy).toBeDefined();
-		});
-	});
-
-	describe("Multiple SOCKS5 Backends", () => {
-		test("should support different proxies for different backends", () => {
-			const backends: Backend[] = [
-				{
-					name: "backend1",
-					url: "http://api1.com",
-					proxy: { host: "proxy1.com", port: 1080 },
-				},
-				{
-					name: "backend2",
-					url: "http://api2.com",
-					proxy: { host: "proxy2.com", port: 1080 },
-				},
-				{
-					name: "backend3",
-					url: "http://api3.com",
-					proxy: { host: "proxy3.com", port: 1081 },
-				},
-			];
-
-			expect(backends).toHaveLength(3);
-			expect(backends[0]?.proxy?.host).toBe("proxy1.com");
-			expect(backends[1]?.proxy?.host).toBe("proxy2.com");
-			expect(backends[2]?.proxy?.port).toBe(1081);
-		});
-
-		test("should support mixed direct and SOCKS5 backends", () => {
-			const backends: Backend[] = [
-				{ name: "direct", url: "http://api.com" },
-				{
-					name: "proxied",
-					url: "http://remote.com",
-					proxy: { host: "proxy.com", port: 1080 },
-				},
-			];
-
-			expect(backends[0]?.proxy).toBeUndefined();
-			expect(backends[1]?.proxy).toBeDefined();
-		});
-	});
-
-	describe("Request Types over SOCKS5", () => {
-		test("should support streaming POST requests", () => {
-			const backend: Backend = {
-				name: "stream-post",
-				url: "http://remote.com",
-				proxy: { host: "proxy.com", port: 1080 },
-			};
-
-			const requestBody = JSON.stringify({
+		const response = await client.request(`${backend.url}/chat/completions`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
 				model: "gpt-4",
-				messages: [],
+				messages: [{ role: "user", content: "Hi" }],
 				stream: true,
-			});
-
-			expect(backend.proxy).toBeDefined();
-			expect(requestBody).toContain("stream");
+			}),
 		});
 
-		test("should support SSE (Server-Sent Events) over SOCKS5", () => {
-			const backend: Backend = {
-				name: "sse-backend",
-				url: "http://remote.com/events",
-				proxy: { host: "proxy.com", port: 1080 },
-			};
+		expect(response.status).toBe(200);
+		expect(response.headers.get("Content-Type")).toContain("text/event-stream");
+		expect(response.body).toBeInstanceOf(ReadableStream);
 
-			const headers = new Headers({
-				Accept: "text/event-stream",
-				Connection: "keep-alive",
-			});
+		const text = await drainText(response as Response);
+		expect(text).toContain('data: {"');
+		expect(text).toContain("data: [DONE]");
+	});
 
-			expect(headers.get("Accept")).toBe("text/event-stream");
-			expect(backend.proxy).toBeDefined();
+	// test("should forward a streaming request through SOCKS5 with 3rd-party proxy and 3rd-party API", async () => {
+		
+	// 	const response = await new BackendAPIClient({
+	// 		proxyUrl: "socks5://vpn:unlimited@82.196.7.200:2434",
+	// 	}).request(`https://opencode.ai/zen/v1/chat/completions`, {
+	// 		method: "POST",
+	// 		headers: { "Content-Type": "application/json" },
+	// 		body: JSON.stringify({
+	// 			model: "big-pickle",
+	// 			messages: [{ role: "user", content: "Hi" }],
+	// 			stream: true,
+	// 		}),
+	// 	});
+		
+	// 	expect(response.status).toBe(200);
+
+	// 	for await (const value of (response?.body as any as ReadableStream<Buffer>)) {
+	// 		// console.log("Response chunk:", value.toString());
+	// 	}
+	// }, {
+	// 	timeout: 30000
+	// });
+
+	test("should forward a GET request through SOCKS5", async () => {
+		const client = new BackendAPIClient(backend);
+
+		const response = await client.request(`${backend.url}/models`, {
+			method: "GET",
 		});
 
-		test("should support chunked responses over SOCKS5", () => {
-			const backend: Backend = {
-				name: "chunked",
-				url: "http://remote.com/stream",
-				proxy: { host: "proxy.com", port: 1080 },
-			};
+		expect(response.status).toBe(200);
+	});
 
-			expect(backend.proxy).toBeDefined();
+	test("should apply API key when forwarding through SOCKS5", async () => {
+		const backendWithKey: Backend = {
+			...backend,
+			apiKey: "sk-test-key-12345",
+		};
+		const client = new BackendAPIClient(backendWithKey);
+
+		const response = await client.request(`${backendWithKey.url}/chat/completions`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				model: "gpt-4",
+				messages: [{ role: "user", content: "Hello" }],
+			}),
 		});
+
+		expect(response.status).toBe(200);
+	});
+});
+
+describe("SOCKS5 with authentication", () => {
+	let fakeApi: FakeOpenAICompatibleAPI;
+	let socks5: Socks5Server;
+	let backend: Backend;
+
+	beforeAll(async () => {
+		socks5 = new Socks5Server("proxyuser", "proxypass");
+		await socks5.start();
+		const proxyUrl = socks5.getUrl();
+
+		fakeApi = new FakeOpenAICompatibleAPI();
+		const apiUrl = await fakeApi.start();
+
+		backend = {
+			name: "auth-socks-backend",
+			url: apiUrl,
+			proxyUrl,
+		};
+	});
+
+	afterAll(async () => {
+		await fakeApi.stop();
+		await socks5.stop();
+	});
+
+	test("should forward requests through authenticated SOCKS5", async () => {
+		const client = new BackendAPIClient(backend);
+
+		const response = await client.request(`${backend.url}/chat/completions`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				model: "gpt-4",
+				messages: [{ role: "user", content: "Hello" }],
+			}),
+		});
+
+		expect(response.status).toBe(200);
+	});
+});
+
+describe("SOCKS5 connection failures", () => {
+	test("should fail when SOCKS5 proxy is unreachable", async () => {
+		const backend: Backend = {
+			name: "unreachable-proxy",
+			url: "http://127.0.0.1:9999",
+			proxyUrl: "socks5://127.0.0.1:1",
+		};
+
+		const client = new BackendAPIClient(backend);
+		await expect(
+			client.request("http://127.0.0.1:9999/v1/models", { method: "GET" })
+		).rejects.toThrow();
 	});
 });

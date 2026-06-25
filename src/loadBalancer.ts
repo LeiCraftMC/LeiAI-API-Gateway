@@ -1,6 +1,6 @@
 import type { Backend, ProviderConfig } from "./utils/config";
 import type { HealthMonitor, MonitoredBackend } from "./healthCheck";
-import { createHttpClient } from "./httpClient";
+import { BackendAPIClient } from "./backendAPIClient";
 import { Logger } from "./utils/logger";
 
 const HOP_BY_HOP_HEADERS = new Set([
@@ -80,7 +80,7 @@ export class LoadBalancer {
 		const backendUrl = new URL(backendPath + searchParams, backend.url).toString();
 
 		const forwardHeaders = this.buildForwardHeaders(headers);
-		const client = createHttpClient(backend);
+		const client = new BackendAPIClient(backend);
 
 		try {
 			const backendResponse = await client.request(backendUrl, {
