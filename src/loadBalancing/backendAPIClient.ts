@@ -94,10 +94,14 @@ export class BackendAPIClient {
 				signal: controller.signal,
 			});
 
+			const sanitizedHeaders = new Headers(response.headers);
+			sanitizedHeaders.delete("content-encoding");
+			sanitizedHeaders.delete("content-length");
+
 			return new Response(response.body, {
 				status: response.status,
 				statusText: response.statusText,
-				headers: response.headers,
+				headers: sanitizedHeaders,
 			});
 		} finally {
 			clearTimeout(timeoutId);
@@ -231,10 +235,14 @@ export class BackendAPIClient {
 							},
 						});
 
+						const sanitizedHeaders = new Headers(responseHeaders);
+						sanitizedHeaders.delete("content-encoding");
+						sanitizedHeaders.delete("content-length");
+
 						resolve(
 							new Response(bodyStream, {
 								status: statusCode,
-								headers: responseHeaders,
+								headers: sanitizedHeaders,
 							})
 						);
 					}
@@ -348,10 +356,14 @@ export class BackendAPIClient {
 									},
 								});
 
+								const sanitizedHeaders = new Headers(responseHeaders);
+								sanitizedHeaders.delete("content-encoding");
+								sanitizedHeaders.delete("content-length");
+
 								resolve(
 									new Response(bodyStream, {
 										status: statusCode,
-										headers: responseHeaders,
+										headers: sanitizedHeaders,
 									})
 								);
 							}
