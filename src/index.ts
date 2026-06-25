@@ -4,6 +4,8 @@ import { Logger } from "./utils/logger";
 import { Utils } from "./utils";
 import { ApiKeysConfig } from "./utils/config/apiKeysConfig";
 import { GatewayConfig } from "./utils/config/gatewayConfig";
+import { CronJobHandler } from "./utils/cron";
+import { ProviderManager } from "./loadBalancing/providerManager";
 
 export class Main {
 
@@ -16,13 +18,18 @@ export class Main {
         process.once("unhandledRejection", Main.handleUnhandledRejection);
 
         const config = await ConfigHandler.loadConfig();
-		
-		await ApiKeysConfig.loadConfig(config.LAG_CONFIG_BASE_DIR ?? "./config");
-		await GatewayConfig.loadConfig(config.LAG_CONFIG_BASE_DIR ?? "./config");
+
+		const apiKeysConfig = await ApiKeysConfig.loadConfig(config.LAG_CONFIG_BASE_DIR ?? "./config");
+		const gatewayConfig = await GatewayConfig.loadConfig(config.LAG_CONFIG_BASE_DIR ?? "./config");
 
         Logger.setLogLevel(config.LAG_LOG_LEVEL ?? "info");
 
         await Utils.ensureDirectoryExists(config.LAG_CONFIG_BASE_DIR ?? "./config");
+
+		await ProviderManager.init(gatewayConfig.providers, true);
+
+
+		await CronJobHandler.startAll();
 
         await API.init({
 			host: config.LAG_HOST ?? "::",
@@ -38,6 +45,7 @@ export class Main {
             Logger.log(`Received ${type}, shutting down...`);
 
             await API.stop();
+			await CronJobHandler.stopAll();
 
             Logger.log("Shutdown complete, exiting.");
             process.exit(code);
