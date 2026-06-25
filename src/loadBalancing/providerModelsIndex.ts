@@ -8,7 +8,12 @@ export class ProviderModelsIndex {
 
     constructor() {}
 
-
+    /**
+     * Returns a snapshot of all currently tracked models for this provider.
+     */
+    public getModels(): Map<string, ProviderModelsIndex.ModelData> {
+        return new Map(this.providerModels);
+    }
 
     public async refreshModelsList(healthyBackendsAPIClients: BackendAPIClient[]): Promise<void> {
 

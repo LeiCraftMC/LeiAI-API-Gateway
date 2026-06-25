@@ -11,6 +11,10 @@ export class ProviderManager {
 
     private static _initialized: boolean = false;
 
+    static isInitialized(): boolean {
+        return this._initialized;
+    }
+
     static async init(
         providers: GatewayConfig.Types.Provider[],
         needsModelFetching: boolean
@@ -52,6 +56,26 @@ export class ProviderManager {
                 providerData.backends.map((backend) => backend.apiClient)
             );
         }
+    }
+
+    static getProviderData(providerId: string): ProviderManager.ProviderData | undefined {
+        return this.providers.get(providerId);
+    }
+
+    static getAllProvidersData(): ProviderManager.ProviderData[] {
+        return Array.from(this.providers.values());
+    }
+
+    static getAllModels(): Map<string, ProviderModelsIndex.ModelData> {
+        const allModels = new Map<string, ProviderModelsIndex.ModelData>();
+
+        for (const providerData of this.providers.values()) {
+            for (const [modelId, modelData] of providerData.models.getModels()) {
+                allModels.set(`${providerData.id}/${modelId}`, modelData);
+            }
+        }
+
+        return allModels;
     }
 
 }

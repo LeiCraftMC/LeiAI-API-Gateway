@@ -26,7 +26,9 @@ export class Main {
 
         await Utils.ensureDirectoryExists(config.LAG_CONFIG_BASE_DIR ?? "./config");
 
-		await ProviderManager.init(gatewayConfig.providers, true);
+		const notNeedModelFetching = Object.keys(gatewayConfig.customModels?.mapping ?? {}).length > 0
+
+		await ProviderManager.init(gatewayConfig.providers, !notNeedModelFetching);
 
 
 		await CronJobHandler.startAll();

@@ -60,10 +60,17 @@ export namespace GatewayConfig.Types {
 			}, { message: "Provider IDs must be unique" }
 		),
 
-		modelsMap: z.record(
-			z.string().meta({ description: "Model Alias" }),
-			z.string().meta({ description: "Read Model (provider/model)" })
-		).optional(),
+		customModels: z.object({
+
+			mapping: z.record(
+				z.string().meta({ description: "Model Alias" }),
+				z.string().meta({ description: "Read Model (provider/model)" })
+			),
+
+			ownerID: z.string()
+				.regex(/^[a-zA-Z0-9-_]+$/, "Custom model owner key can only contain letters, numbers, hyphens and underscores")
+				.meta({ description: "Custom model owner ID for the /v1/models endpoint" })
+		}).optional()
 	});
 
 	export type ConfigSchema = z.infer<typeof ConfigSchema>;
