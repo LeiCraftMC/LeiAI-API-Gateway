@@ -158,7 +158,7 @@ export class BackendAPIClient {
 
 		// Build HTTP request
 		let requestStr = `${method} ${path} HTTP/1.1\r\n`;
-		requestStr += `Host: ${parsedUrl.hostname}\r\n`;
+		requestStr += `Host: ${parsedUrl.host}\r\n`;
 
 		headers.forEach((value, key) => {
 			requestStr += `${key}: ${value}\r\n`;
@@ -173,13 +173,11 @@ export class BackendAPIClient {
 
 		requestStr += "Connection: close\r\n\r\n";
 
-		// Write request
 		socket.write(requestStr);
 		if (bodyBuffer) {
 			socket.write(bodyBuffer);
 		}
 
-		// Stream response back
 		return new Promise((resolve, reject) => {
 			let responseStarted = false;
 			let statusCode = 200;
@@ -214,7 +212,6 @@ export class BackendAPIClient {
 						const bodyStart = headerEndIdx + 4;
 						const bodyData = data.substring(bodyStart);
 
-						// Create a new readable stream from remaining data
 						const bodyStream = new ReadableStream({
 							start(controller) {
 								if (bodyData.length > 0) {
@@ -283,7 +280,7 @@ export class BackendAPIClient {
 					const path = parsedUrl.pathname + parsedUrl.search;
 
 					let requestStr = `${method} ${path} HTTP/1.1\r\n`;
-					requestStr += `Host: ${parsedUrl.hostname}\r\n`;
+					requestStr += `Host: ${parsedUrl.host}\r\n`;
 
 					headers.forEach((value, key) => {
 						requestStr += `${key}: ${value}\r\n`;
