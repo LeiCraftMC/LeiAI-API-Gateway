@@ -10,6 +10,6 @@ RUN chmod u+x /usr/local/bin/leiai-api-gateway
 
 EXPOSE 12117/tcp
 
-ENV LAG_CONFIG_BASE_DIR=/app
+ENV LAG_CONFIG_BASE_DIR=/app/config
 
 ENTRYPOINT ["/usr/local/bin/leiai-api-gateway"]
