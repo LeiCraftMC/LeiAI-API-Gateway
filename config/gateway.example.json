@@ -1,44 +1,38 @@
 {
-  "port": 3000,
-  "host": "0.0.0.0",
-  "healthCheckInterval": 30000,
-  "providers": [
-    {
-      "name": "my-provider",
-      "backends": [
-        {
-          "name": "Local LLM Server",
-          "url": "http://localhost:8000",
-          "healthCheckPath": "/v1/models",
-          "healthCheckInterval": 30000
-        },
-        {
-          "name": "Remote LLM via SOCKS5",
-          "url": "http://remote-llm.example.com:8000",
-          "apiKey": "your-api-key",
-          "proxy": {
-            "host": "proxy.example.com",
-            "port": 1080,
-            "username": "user",
-            "password": "password"
-          },
-          "healthCheckPath": "/v1/models",
-          "healthCheckInterval": 30000
-        }
-      ]
-    },
-    {
-      "name": "openai",
-      "prefix": "/openai",
-      "backends": [
-        {
-          "name": "OpenAI Official",
-          "url": "https://api.openai.com",
-          "apiKey": "sk-your-api-key-here",
-          "healthCheckPath": "/v1/models",
-          "healthCheckInterval": 30000
-        }
-      ]
-    }
-  ]
+	"providers": [
+		{
+			"id": "my-provider",
+			"name": "My LLM Provider",
+			"backends": [
+				{
+					"name": "Local LLM Server",
+					"baseUrl": "http://localhost:8000"
+				},
+				{
+					"name": "Remote LLM via Proxy",
+					"baseUrl": "http://remote-llm.example.com:8000",
+					"apiKey": "your-api-key",
+					"proxyUrl": "socks5://user:password@proxy.example.com:1080"
+				}
+			]
+		},
+		{
+			"id": "openai",
+			"name": "OpenAI",
+			"backends": [
+				{
+					"name": "OpenAI Official",
+					"baseUrl": "https://api.openai.com",
+					"apiKey": "sk-your-api-key-here"
+				}
+			]
+		}
+	],
+	"customModels": {
+		"mapping": {
+			"gpt-4": "openai/gpt-4",
+			"gpt-3.5": "openai/gpt-3.5-turbo"
+		},
+		"ownerID": "custom-owner"
+	}
 }
