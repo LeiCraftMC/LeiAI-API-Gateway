@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { ProviderManager } from "../../../../loadBalancing/providerManager";
 import { Logger } from "../../../../utils/logger";
 import { GatewayConfig } from "../../../../utils/config/gatewayConfig";
+import type { AuthContext } from "../auth";
 
 export const router = new Hono();
 
@@ -13,6 +14,9 @@ export const router = new Hono();
  */
 router.get("/models", (c) => {
     try {
+		// @ts-ignore
+		const authContext = c.get("authContext") as AuthContext
+
         const models: Array<{
             id: string;
             object: "model";
@@ -72,10 +76,28 @@ router.get("/models", (c) => {
 
         Logger.debug(`GET /v1/models — returning ${models.length} models`);
 
+		if (authContext.denyModels && authContext.denyModels.length > 0) {
+
+			return c.json({
+				object: "list",
+				data: models.filter(model => !authContext.denyModels!.includes(model.id)),
+			}, 200);
+
+		}
+		
+		if (authContext.allowedModels && authContext.allowedModels.length > 0) {
+
+			return c.json({
+				object: "list",
+				data: models.filter(model => authContext.allowedModels!.includes(model.id)),
+			}, 200);
+
+		}
+
         return c.json({
             object: "list",
             data: models,
-        });
+        }, 200);
     } catch (error) {
         Logger.error("Failed to list models:", error);
         return c.json(
