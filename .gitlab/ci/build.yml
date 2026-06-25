@@ -14,13 +14,6 @@ build-and-push:
 
   before_script:
 
-    # Build the standalone binary
-
-    - apt-get update
-    - apt-get install -y ca-certificates curl gnupg
-    - bun install --frozen-lockfile
-    - bun run compile linux-x64-baseline --no-version-tag
-
     # Docker install
 
     - install -m 0755 -d /etc/apt/keyrings
@@ -39,6 +32,13 @@ build-and-push:
     - echo "$CI_REGISTRY_PASSWORD" | docker login $CI_REGISTRY -u $CI_REGISTRY_USER --password-stdin
 
   script:
+
+    # Build the standalone binary
+
+    - apt-get update
+    - apt-get install -y ca-certificates curl gnupg
+    - bun install --frozen-lockfile
+    - bun run compile linux-x64-baseline --no-version-tag
 
     - docker build -f docker/Dockerfile -t "$CI_REGISTRY_IMAGE:latest" .
     - docker push "$CI_REGISTRY_IMAGE:latest"
