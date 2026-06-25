@@ -31,13 +31,13 @@ src/
     ├── cron.ts                   # Cron job manager (health + model refresh)
     └── config/
         ├── index.ts              # Env var loading (LAG_LOG_LEVEL, LAG_HOST, etc.)
-        ├── gatewayConfig.ts      # providers.json validation (Zod)
+        ├── gatewayConfig.ts      # gateway.json validation (Zod)
         └── apiKeysConfig.ts      # api-keys.json validation (Zod)
 ```
 
 ## Data Flow
 
-1. **Startup**: `Main.main()` → load env vars → load `providers.json` + `api-keys.json` → init `ProviderManager` (creates `BackendAPIClient` + `HealthMonitor` + `ProviderModelsIndex` per provider) → start cron jobs → start Hono server.
+1. **Startup**: `Main.main()` → load env vars → load `gateway.json` + `api-keys.json` → init `ProviderManager` (creates `BackendAPIClient` + `HealthMonitor` + `ProviderModelsIndex` per provider) → start cron jobs → start Hono server.
 2. **Request**: Client sends `Authorization: Bearer <key>` → `authMiddlewareV1` validates against `api-keys.json` → `openai.ts` route resolves model (handles `provider/model` format and `customModels` alias) → `LoadBalancer` picks healthy backend via round-robin → `BackendAPIClient` proxies the request (HTTP or SOCKS5).
 3. **Health**: Cron job every 5 min calls `refreshHealthMonitorData()` → for each backend, runs a lightweight request → marks unhealthy after 3 consecutive failures → exponential backoff on timeout (1s → 30s max, 2^n).
 4. **Models**: Cron job calls `refreshModelsData()` → fetches `/v1/models` from all backends of each provider → keeps only models present on **every** healthy backend → exposed at `GET /v1/models` as `providerId/modelName`.
@@ -45,7 +45,7 @@ src/
 ## Key Conventions
 
 - **Config format**: JSON files in `config/`:
-  - `providers.json` — array of providers, each with `id`, `name`, `backends[]` (each: `name`, `baseUrl`, optional `apiKey`, optional `proxyUrl`), optional `customModels.mapping`
+  - `gateway.json` — array of providers, each with `id`, `name`, `backends[]` (each: `name`, `baseUrl`, optional `apiKey`, optional `proxyUrl`), optional `customModels.mapping`
   - `api-keys.json` — flat record of API key → `{ description?, allowedModels[], denyModels[] }`
 - **Env vars**: `LAG_LOG_LEVEL`, `LAG_HOST`, `LAG_PORT` (default 12117), `LAG_CONFIG_BASE_DIR` (default `./config`)
 - **Model IDs**: Exposed as `providerId/modelName` (e.g., `openai/gpt-4`). Aliases via `customModels.mapping`.

@@ -12,7 +12,7 @@ export class GatewayConfig {
 		if (this.config) return this.config;
 		
 		try {
-			const raw_config = await Bun.file(`${confifBaseDir}/providers.json`).json();
+			const raw_config = await Bun.file(`${confifBaseDir}/gateway.json`).json();
 			this.config = GatewayConfig.Types.ConfigSchema.parse(raw_config);
 			
 

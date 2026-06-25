@@ -12,7 +12,7 @@ A high-performance OpenAI-compatible API load balancer built with **Bun + Hono**
 - **SOCKS5 proxy support** — Route backend requests through SOCKS5 proxies, including streaming
 - **OpenAI-compatible endpoints** — Drop-in replacement for OpenAI's `/v1/chat/completions`, `/v1/completions`, `/v1/embeddings`, and `/v1/models`
 - **Custom model aliases** — Map friendly model names to `provider/model` IDs
-- **JSON configuration** — Simple `providers.json` and `api-keys.json` config files
+- **JSON configuration** — Simple `gateway.json` and `api-keys.json` config files
 - **Graceful shutdown** — Handles SIGINT, SIGTERM, uncaught exceptions, and unhandled rejections
 
 ## Installation
@@ -27,7 +27,7 @@ bun install
 
 ## Configuration
 
-Create `config/providers.json` with your LLM provider backends:
+Create `config/gateway.json` with your LLM provider backends:
 
 ```json
 {
@@ -97,7 +97,7 @@ Create `config/api-keys.json` with your client API keys:
 | `LAG_PORT` | `12117` | Server listen port |
 | `LAG_CONFIG_BASE_DIR` | `./config` | Config directory path |
 
-#### `providers.json` — Provider/Backend Options
+#### `gateway.json` — Provider/Backend Options
 
 | Field | Description |
 |---|---|
@@ -348,7 +348,7 @@ The compose file:
 
 ### Kubernetes
 
-Create a ConfigMap with your `providers.json` and `api-keys.json`, then deploy:
+Create a ConfigMap with your `gateway.json` and `api-keys.json`, then deploy:
 
 ```yaml
 apiVersion: apps/v1
@@ -458,10 +458,10 @@ sudo systemctl start leiai-api-gateway
 │       ├── cron.ts            # Cron job scheduler
 │       └── config/
 │           ├── index.ts       # Env var loading
-│           ├── gatewayConfig.ts    # providers.json schema (Zod)
+│           ├── gatewayConfig.ts    # gateway.json schema (Zod)
 │           └── apiKeysConfig.ts    # api-keys.json schema (Zod)
 ├── config/
-│   ├── providers.json         # Provider/backend definitions
+│   ├── gateway.json         # Provider/backend definitions
 │   ├── api-keys.json          # Client API keys
 │   ├── gateway.example.json   # Example provider config
 │   └── apikeys.example.json   # Example API key config
