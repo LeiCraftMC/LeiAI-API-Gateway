@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Context, Hono } from "hono";
 import { ProviderManager } from "../../../../loadBalancing/providerManager";
 import { Logger } from "../../../../utils/logger";
 import { GatewayConfig } from "../../../../utils/config/gatewayConfig";
@@ -208,7 +208,7 @@ router.get("/models", (c) => {
 /* ------------------------------------------------------------------ */
 
 function createProxyHandler(targetPath: string) {
-	return async (c: any) => {
+	return async (c: Context) => {
 		try {
 			const authContext = c.get("auth") as AuthContext | undefined;
 			if (!authContext) {
@@ -292,7 +292,7 @@ function createProxyHandler(targetPath: string) {
 			const responseHeaders: Record<string, string> = {};
 			response.headers.forEach((value, key) => { responseHeaders[key] = value; });
 
-			return c.newResponse(response.body, response.status, responseHeaders);
+			return c.newResponse(response.body, response.status as any, responseHeaders);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			Logger.error(`Error proxying ${targetPath}:`, message);

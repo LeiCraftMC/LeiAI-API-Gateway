@@ -65,9 +65,11 @@ export class BackendAPIClient {
 
 		if (this.settings.apiKey) {
 			headers.set("Authorization", `Bearer ${this.settings.apiKey}`);
+		} else {
+			headers.delete("Authorization");
 		}
 
-		headers.set("User-Agent", "AI-Load-Balancer/1.0");
+		headers.set("User-Agent", "AI-Gateway/1.0");
 
 		if (this.settings.proxy) {
 			return this.requestViaSocks(url, headers, options);
