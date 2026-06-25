@@ -3,7 +3,7 @@ import { LoadBalancer, Provider, type LoadBalancerBackend } from "../src/loadBal
 import { HealthMonitor } from "../src/loadBalancing/healthMonitor";
 import { BackendAPIClient } from "../src/loadBalancing/backendAPIClient";
 import { ProviderModelsIndex } from "../src/loadBalancing/providerModelsIndex";
-import { createFakeBackend } from "./helpers/fakeOpenAICompatibleAPI";
+import { FakeOpenAICompatibleAPI } from "./helpers/fakeOpenAICompatibleAPI";
 
 describe("LoadBalancer — forwardRequest", () => {
 	test("should return 503 when no backends available", async () => {
@@ -34,8 +34,10 @@ describe("LoadBalancer — forwardRequest", () => {
 	});
 
 	test("should forward request to a real backend and return response", async () => {
-		const fake = createFakeBackend({ apiKey: "sk-fake" });
-		const backend = { name: "fake-backend", baseUrl: fake.url, apiKey: "sk-fake" };
+		const fake = new FakeOpenAICompatibleAPI();
+		await fake.start();
+
+		const backend = { name: "fake-backend", baseUrl: fake.baseUrl };
 		const monitor = new HealthMonitor([backend]);
 		const backends: LoadBalancerBackend[] = [
 			{
@@ -60,12 +62,15 @@ describe("LoadBalancer — forwardRequest", () => {
 		expect(json.object).toBe("chat.completion");
 		expect(fake.requests.length).toBeGreaterThanOrEqual(1);
 
-		fake.close();
+		await fake.stop();
 	});
 
 	test("should mark backend unhealthy after error response", async () => {
-		const fake = createFakeBackend({ apiKey: "sk-fake", statusCode: 500 });
-		const backend = { name: "sick-backend", baseUrl: fake.url, apiKey: "sk-fake" };
+		const fake = new FakeOpenAICompatibleAPI();
+		await fake.start();
+		fake.setNextError(500, JSON.stringify({ error: "Backend error" }));
+
+		const backend = { name: "sick-backend", baseUrl: fake.baseUrl };
 		const monitor = new HealthMonitor([backend]);
 		const backends: LoadBalancerBackend[] = [
 			{
@@ -78,7 +83,7 @@ describe("LoadBalancer — forwardRequest", () => {
 		await lb.forwardRequest("/v1/models", "", "GET", new Headers());
 		expect(monitor.isHealthy(0)).toBe(false);
 
-		fake.close();
+		await fake.stop();
 	});
 
 	test("should mark backend unhealthy after connection error", async () => {
@@ -97,8 +102,10 @@ describe("LoadBalancer — forwardRequest", () => {
 	});
 
 	test("should strip prefix before forwarding", async () => {
-		const fake = createFakeBackend({ apiKey: "sk-fake" });
-		const backend = { name: "fake", baseUrl: fake.url, apiKey: "sk-fake" };
+		const fake = new FakeOpenAICompatibleAPI();
+		await fake.start();
+
+		const backend = { name: "fake", baseUrl: fake.baseUrl };
 		const monitor = new HealthMonitor([backend]);
 		const backends: LoadBalancerBackend[] = [
 			{
@@ -114,14 +121,16 @@ describe("LoadBalancer — forwardRequest", () => {
 		expect(recorded).toBeDefined();
 		expect(recorded!.pathname).toBe("/v1/models");
 
-		fake.close();
+		await fake.stop();
 	});
 });
 
 describe("Provider — forwardRequest", () => {
 	test("should delegate to LoadBalancer and return response", async () => {
-		const fake = createFakeBackend({ apiKey: "sk-fake" });
-		const backend = { name: "fake-backend", baseUrl: fake.url, apiKey: "sk-fake" };
+		const fake = new FakeOpenAICompatibleAPI();
+		await fake.start();
+
+		const backend = { name: "fake-backend", baseUrl: fake.baseUrl };
 		const healthMonitor = new HealthMonitor([backend]);
 		const provider = new Provider({
 			id: "test-provider",
@@ -149,7 +158,7 @@ describe("Provider — forwardRequest", () => {
 		const json = (await response.json()) as Record<string, unknown>;
 		expect(json.object).toBe("chat.completion");
 
-		fake.close();
+		await fake.stop();
 	});
 });
 
@@ -189,7 +198,6 @@ describe("HealthMonitor — integration", () => {
 		expect(stats[0]?.healthy).toBe(true);
 		expect(stats[1]?.healthy).toBe(false);
 
-		// Unhealthy entry should have timeoutEnds and consecutiveFailures
 		const unhealthy = stats[1];
 		if (!unhealthy) throw new Error("expected stat");
 		if (unhealthy.healthy === false) {

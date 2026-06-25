@@ -19,11 +19,11 @@ describe("SOCKS5 Streaming with real servers", () => {
 		const proxyUrl = socks5.getUrl();
 
 		fakeApi = new FakeOpenAICompatibleAPI();
-		const apiUrl = await fakeApi.start();
+		await fakeApi.start();
 
 		backend = {
 			name: "socks-proxied-backend",
-			baseUrl: apiUrl,
+			baseUrl: fakeApi.getUrl(),
 			proxyUrl,
 		};
 	});
@@ -137,11 +137,11 @@ describe("SOCKS5 with authentication", () => {
 		const proxyUrl = socks5.getUrl();
 
 		fakeApi = new FakeOpenAICompatibleAPI();
-		const apiUrl = await fakeApi.start();
+		await fakeApi.start();
 
 		backend = {
 			name: "auth-socks-backend",
-			baseUrl: apiUrl,
+			baseUrl: fakeApi.getUrl(),
 			proxyUrl,
 		};
 	});

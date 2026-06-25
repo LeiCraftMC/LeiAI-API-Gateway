@@ -1,36 +1,7 @@
-import { LLMock } from "@copilotkit/aimock";
-
-export class FakeOpenAICompatibleAPI {
-
-	private readonly mock: LLMock;
-
-	constructor() {
-		this.mock = new LLMock();
-
-		// Register a chat-completion fixture that handles both streaming
-		// and non-streaming POST /v1/chat/completions requests.
-		this.mock.on({ endpoint: "chat" }, { content: "Hello! I'm an AI assistant." });
-
-		// Register an embedding fixture for /v1/embeddings.
-		this.mock.on({ endpoint: "embedding" }, { embedding: [0.1, 0.2, 0.3] });
-	}
-
-	async start() {
-		await this.mock.start();
-		return this.getUrl();
-	}
-
-	public getUrl(): string {
-		return this.mock.url + "/v1";
-	}
-
-	async stop() {
-		await this.mock.stop();
-	}
-}
+/* no external imports — fully self-contained using Bun.serve */
 
 /* ------------------------------------------------------------------ */
-/*  Lightweight fake backend for integration tests                     */
+/*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
 export interface FakeBackendConfig {
@@ -41,140 +12,214 @@ export interface FakeBackendConfig {
 	model?: string;
 }
 
-export interface FakeBackendInstance {
-	url: string;
-	close: () => void;
-	requests: Array<{
-		method: string;
-		pathname: string;
-		headers: Record<string, string>;
-		body?: string;
-	}>;
-	config: FakeBackendConfig;
+export interface FakeBackendRequest {
+	method: string;
+	pathname: string;
+	headers: Record<string, string>;
+	body?: string;
 }
 
+/* ------------------------------------------------------------------ */
+/*  FakeOpenAICompatibleAPI  —  full Bun.serve-based fake backend      */
+/* ------------------------------------------------------------------ */
+
 /**
- * Create a lightweight fake OpenAI-compatible backend using Bun.serve.
- * Tracks all received requests and supports configurable error states.
+ * Lightweight fake OpenAI-compatible API server built on Bun.serve.
+ *
+ * Handles all common OpenAI paths:
+ *  - POST /v1/chat/completions  (streaming + non-streaming)
+ *  - POST /v1/completions
+ *  - POST /v1/embeddings
+ *  - GET  /v1/models
+ *
+ * Supports configurable errors, delays, and API key validation.
+ * Tracks all received requests.
  */
-export function createFakeBackend(initialConfig?: FakeBackendConfig): FakeBackendInstance {
-	const requests: FakeBackendInstance["requests"] = [];
-	const config: FakeBackendConfig = { model: "gpt-4-fake", ...initialConfig };
+export class FakeOpenAICompatibleAPI {
+	private readonly config: FakeBackendConfig;
+	private readonly _requests: FakeBackendRequest[] = [];
+	private server: ReturnType<typeof Bun.serve> | null = null;
 
-	const server = Bun.serve({
-		hostname: "127.0.0.1",
-		port: 0,
-		async fetch(req: Request) {
-			const url = new URL(req.url);
+	constructor(config?: FakeBackendConfig) {
+		this.config = { model: "gpt-4-fake", ...config };
+	}
 
-			if (config.delayMs) {
-				await new Promise((r) => setTimeout(r, config.delayMs));
-			}
+	/* ---- Lifecycle ---- */
 
-			// Check API key if configured
-			if (config.apiKey) {
-				const auth = req.headers.get("authorization");
-				if (auth !== `Bearer ${config.apiKey}`) {
-					requests.push({
-						method: req.method,
-						pathname: url.pathname,
-						headers: Object.fromEntries(req.headers),
-					});
-					return Response.json({ error: "Unauthorized" }, { status: 401 });
+	/**
+	 * Start the server and return the base URL **without** a `/v1` suffix.
+	 * Use this when the paths you send already contain `/v1/`.
+	 *
+	 * For SOCKS5 / old-style tests that need a `/v1` suffix, call `getUrl()` instead.
+	 */
+	async start(): Promise<string> {
+		if (this.server) return this.baseUrl;
+
+		this.server = Bun.serve({
+			hostname: "127.0.0.1",
+			port: 0,
+			fetch: async (req: Request) => {
+				const url = new URL(req.url);
+
+				if (this.config.delayMs) {
+					await new Promise((r) => setTimeout(r, this.config.delayMs));
 				}
-			}
 
-			// Track the request
-			const body = req.method !== "GET" ? await req.text() : undefined;
-			requests.push({
-				method: req.method,
-				pathname: url.pathname,
-				headers: Object.fromEntries(req.headers),
-				body,
+				// API key check
+				if (this.config.apiKey) {
+					const auth = req.headers.get("authorization");
+					if (auth !== `Bearer ${this.config.apiKey}`) {
+						this._track(req, url, undefined);
+						return Response.json({ error: "Unauthorized" }, { status: 401 });
+					}
+				}
+
+				const body = req.method !== "GET" ? await req.text() : undefined;
+				this._track(req, url, body);
+
+				// Configured error mode
+				if (this.config.statusCode) {
+					return new Response(
+						this.config.responseBody ?? JSON.stringify({ error: "Backend error" }),
+						{
+							status: this.config.statusCode,
+							headers: { "Content-Type": "application/json" },
+						},
+					);
+				}
+
+				const model = this.config.model ?? "gpt-4-fake";
+
+				// ---- endpoints ----
+
+				if (url.pathname === "/v1/chat/completions") {
+					return this._handleChatCompletions(body, model);
+				}
+
+				if (url.pathname === "/v1/completions") {
+					return this._handleCompletions(body, model);
+				}
+
+				if (url.pathname === "/v1/embeddings") {
+					return this._handleEmbeddings(model);
+				}
+
+				if (url.pathname === "/v1/models") {
+					return Response.json({
+						object: "list",
+						data: [
+							{ id: model, object: "model", created: 1700000000, owned_by: "fake-org" },
+						],
+					});
+				}
+
+				return Response.json({ error: "Not found" }, { status: 404 });
+			},
+		});
+
+		return this.baseUrl;
+	}
+
+	get baseUrl(): string {
+		if (!this.server) throw new Error("Fake server not started. Call start() first.");
+		return `http://${this.server.hostname}:${this.server.port}`;
+	}
+
+	getUrl(): string {
+		return this.baseUrl + "/v1";
+	}
+
+	async stop(): Promise<void> {
+		this.server?.stop();
+		this.server = null;
+		this._requests.length = 0;
+	}
+
+	/* ---- Request inspection ---- */
+
+	get requests(): FakeBackendRequest[] {
+		return [...this._requests];
+	}
+
+	clearRequests(): void {
+		this._requests.length = 0;
+	}
+
+	setNextError(status: number, responseBody?: string): void {
+		this.config.statusCode = status;
+		this.config.responseBody = responseBody;
+	}
+
+	clearNextError(): void {
+		this.config.statusCode = undefined;
+		this.config.responseBody = undefined;
+	}
+
+	/* ---- Internal ---- */
+
+	private _track(req: Request, url: URL, body?: string): void {
+		this._requests.push({
+			method: req.method,
+			pathname: url.pathname,
+			headers: Object.fromEntries(req.headers),
+			body,
+		});
+	}
+
+	private _handleChatCompletions(body: string | undefined, model: string): Response {
+		const reqBody = body ? JSON.parse(body) : {};
+
+		if (reqBody.stream) {
+			const encoder = new TextEncoder();
+			const stream = new ReadableStream({
+				start(controller) {
+					const chunks = [
+						`data: {"id":"chatcmpl-fake","object":"chat.completion.chunk","model":"${model}","choices":[{"delta":{"role":"assistant"},"index":0}]}`,
+						`data: {"id":"chatcmpl-fake","object":"chat.completion.chunk","model":"${model}","choices":[{"delta":{"content":"Hello"},"index":0}]}`,
+						"data: [DONE]",
+					];
+					for (const c of chunks) {
+						controller.enqueue(encoder.encode(c + "\n\n"));
+					}
+					controller.close();
+				},
 			});
+			return new Response(stream, {
+				headers: {
+					"Content-Type": "text/event-stream",
+					"Cache-Control": "no-cache",
+					Connection: "keep-alive",
+				},
+			});
+		}
 
-			// Return configured status code / body if set
-			if (config.statusCode) {
-				return new Response(
-					config.responseBody ?? JSON.stringify({ error: "Backend error" }),
-					{
-						status: config.statusCode,
-						headers: { "Content-Type": "application/json" },
-					},
-				);
-			}
+		return Response.json({
+			id: "chatcmpl-fake",
+			object: "chat.completion",
+			model,
+			choices: [{
+				message: { role: "assistant", content: "Hello!" },
+				finish_reason: "stop",
+				index: 0,
+			}],
+			usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+		});
+	}
 
-			// Default OpenAI-compatible responses
-			const model = config.model ?? "gpt-4-fake";
+	private _handleCompletions(_body: string | undefined, model: string): Response {
+		return Response.json({
+			id: "cmpl-fake",
+			object: "text_completion",
+			model,
+			choices: [{ text: "Hello world" }],
+		});
+	}
 
-			if (url.pathname === "/v1/chat/completions") {
-				const reqBody = body ? JSON.parse(body) : {};
-				if (reqBody.stream) {
-					// Streaming response
-					const encoder = new TextEncoder();
-					const stream = new ReadableStream({
-						start(controller) {
-							const chunks = [
-								`data: {"id":"chatcmpl-fake","object":"chat.completion.chunk","model":"${model}","choices":[{"delta":{"role":"assistant"},"index":0}]}`,
-								`data: {"id":"chatcmpl-fake","object":"chat.completion.chunk","model":"${model}","choices":[{"delta":{"content":"Hello"},"index":0}]}`,
-								"data: [DONE]",
-							];
-							chunks.forEach((c) => controller.enqueue(encoder.encode(c + "\n\n")));
-							controller.close();
-						},
-					});
-					return new Response(stream, {
-						headers: {
-							"Content-Type": "text/event-stream",
-							"Cache-Control": "no-cache",
-							Connection: "keep-alive",
-						},
-					});
-				}
-
-				return Response.json({
-					id: "chatcmpl-fake",
-					object: "chat.completion",
-					model,
-					choices: [{ message: { role: "assistant", content: "Hello!" }, index: 0 }],
-					usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
-				});
-			}
-
-			if (url.pathname === "/v1/completions") {
-				return Response.json({
-					id: "cmpl-fake",
-					object: "text_completion",
-					model,
-					choices: [{ text: "Hello world" }],
-				});
-			}
-
-			if (url.pathname === "/v1/embeddings") {
-				return Response.json({
-					object: "list",
-					data: [{ object: "embedding", embedding: [0.1, 0.2, 0.3], index: 0 }],
-					model,
-				});
-			}
-
-			if (url.pathname === "/v1/models") {
-				return Response.json({
-					object: "list",
-					data: [
-						{ id: model, object: "model", created: 1700000000, owned_by: "fake-org" },
-					],
-				});
-			}
-
-			return Response.json({ error: "Not found" }, { status: 404 });
-		},
-	});
-
-	return {
-		url: `http://${server.hostname}:${server.port}`,
-		close: () => server.stop(),
-		requests,
-		config,
-	};
+	private _handleEmbeddings(model: string): Response {
+		return Response.json({
+			object: "list",
+			data: [{ object: "embedding", embedding: [0.1, 0.2, 0.3], index: 0 }],
+			model,
+		});
+	}
 }
