@@ -21,9 +21,9 @@ export class ProviderModelsIndex {
 
         for (const apiClient of healthyBackendsAPIClients) {
             try {
-                const response = await apiClient.get("/v1/models");
+                const response = await apiClient.get("/models");
                 if (!response.ok) {
-                    Logger.warn(`Failed to fetch models from backend: ${response.status}`);
+                    Logger.warn(`Failed to fetch models from backend: ${response.status}, (Path: ${response.url})`);
                     continue;
                 }
                 const data = (await response.json()) as {
