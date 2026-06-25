@@ -21,7 +21,7 @@ export const router = new Hono();
  * arrives without a `/` — they are resolved through the mapping and
  * then the real (prefixed) name is re-resolved recursively.
  */
-function resolveModel(model: string): {
+export function resolveModel(model: string): {
 	providerId: string;
 	providerName: string;
 	bareModel: string;
@@ -53,7 +53,7 @@ function resolveModel(model: string): {
  * Rewrite the `model` field in a JSON request body so the backend
  * receives the bare model name (without provider prefix).
  */
-function rewriteModelField(body: string, bareModel: string): string {
+export function rewriteModelField(body: string, bareModel: string): string {
 	try {
 		const parsed = JSON.parse(body);
 		if (typeof parsed?.model === "string" && parsed.model !== bareModel) {

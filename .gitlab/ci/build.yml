@@ -13,6 +13,11 @@ build-and-push:
       - node_modules/
 
   before_script:
+  
+    # Install Bun and dependencies
+    - apt-get update
+    - apt-get install -y ca-certificates curl gnupg
+    - bun install --frozen-lockfile
 
     # Docker install
 
@@ -34,10 +39,6 @@ build-and-push:
   script:
 
     # Build the standalone binary
-
-    - apt-get update
-    - apt-get install -y ca-certificates curl gnupg
-    - bun install --frozen-lockfile
     - bun run compile linux-x64-baseline --no-version-tag
 
     - docker build -f docker/Dockerfile -t "$CI_REGISTRY_IMAGE:latest" .

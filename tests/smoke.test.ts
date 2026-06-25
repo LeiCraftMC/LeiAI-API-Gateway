@@ -1,15 +1,15 @@
 import { describe, test, expect } from "bun:test";
 
-// Smoke tests - quick validation that basic functionality works
+// Smoke tests — quick validation that basic functionality works
 describe("Smoke Tests", () => {
 	describe("Imports", () => {
 		test("should import config module", async () => {
 			const config = await import("../src/utils/config/gatewayConfig");
-			expect(config.loadConfig).toBeDefined();
+			expect(config.GatewayConfig).toBeDefined();
 		});
 
 		test("should import load balancer module", async () => {
-			const lb = await import("../src/loadBalancer");
+			const lb = await import("../src/loadBalancing/loadBalancer");
 			expect(lb.LoadBalancer).toBeDefined();
 			expect(lb.Provider).toBeDefined();
 		});
@@ -23,80 +23,76 @@ describe("Smoke Tests", () => {
 			const client = await import("../src/loadBalancing/backendAPIClient");
 			expect(client.BackendAPIClient).toBeDefined();
 		});
+
+		test("should import provider manager module", async () => {
+			const pm = await import("../src/loadBalancing/providerManager");
+			expect(pm.ProviderManager).toBeDefined();
+		});
 	});
 
 	describe("Core Functionality", () => {
-		test("should create Provider instance", async () => {
-			const { Provider } = await import("../src/loadBalancer");
+		test("should create LoadBalancer instance", async () => {
+			const { LoadBalancer } = await import("../src/loadBalancing/loadBalancer");
 			const { HealthMonitor } = await import("../src/loadBalancing/healthMonitor");
-			const monitor = new HealthMonitor();
-			const provider = new Provider(
-				{
-					name: "my-provider",
-					backends: [{ name: "test", url: "http://localhost:8000" }],
-				},
-				monitor
-			);
-			expect(provider).toBeDefined();
-			expect(provider.name).toBe("my-provider");
-		});
+			const { BackendAPIClient } = await import("../src/loadBalancing/backendAPIClient");
 
-		test("should match request paths", async () => {
-			const { Provider } = await import("../src/loadBalancer");
-			const { HealthMonitor } = await import("../src/loadBalancing/healthMonitor");
-			const monitor = new HealthMonitor();
-			const provider = new Provider(
-				{
-					name: "my-provider",
-					prefix: "/my-provider",
-					backends: [{ name: "test", url: "http://localhost:8000" }],
-				},
-				monitor
-			);
-			expect(provider.matches("/my-provider")).toBe(true);
-			expect(provider.matches("/my-provider/v1/models")).toBe(true);
-			expect(provider.matches("/other-provider")).toBe(false);
-		});
-
-		test("should get next backend from provider", async () => {
-			const { Provider } = await import("../src/loadBalancer");
-			const { HealthMonitor } = await import("../src/loadBalancing/healthMonitor");
-			const monitor = new HealthMonitor();
-			const provider = new Provider(
-				{
-					name: "my-provider",
-					backends: [
-						{ name: "backend-1", url: "http://localhost:8001" },
-						{ name: "backend-2", url: "http://localhost:8002" },
-					],
-				},
-				monitor
-			);
-			const next = provider.loadBalancer.getNextBackend();
-			expect(next).toBeDefined();
-			expect(next?.name).toMatch(/backend-/);
-		});
-
-		test("should initialize health monitor", async () => {
-			const { HealthMonitor } = await import("../src/loadBalancing/healthMonitor");
-			const monitor = new HealthMonitor();
-			monitor.initialize([
-				{ name: "test-1", url: "http://localhost:8000", providerName: "p1" },
-				{ name: "test-2", url: "http://localhost:8001", providerName: "p1" },
+			const monitor = new HealthMonitor([
+				{ name: "test", baseUrl: "http://localhost:8000" },
 			]);
-			const stats = monitor.getStats();
-			expect(stats).toHaveLength(2);
+			const lb = new LoadBalancer(
+				"provider-1",
+				"/",
+				[
+					{
+						name: "test",
+						apiClient: new BackendAPIClient({ baseUrl: "http://localhost:8000" }),
+					},
+				],
+				monitor,
+			);
+			expect(lb).toBeDefined();
+			expect(lb.getNextBackendIndex()).toBe(0);
 		});
-	});
 
-	describe("HTTP Client", () => {
+		test("should create Provider instance", async () => {
+			const { Provider } = await import("../src/loadBalancing/loadBalancer");
+			const { HealthMonitor } = await import("../src/loadBalancing/healthMonitor");
+			const { BackendAPIClient } = await import("../src/loadBalancing/backendAPIClient");
+
+			const healthMonitor = new HealthMonitor([
+				{ name: "test", baseUrl: "http://localhost:8000" },
+			]);
+			const provider = new Provider({
+				id: "provider-1",
+				name: "My Provider",
+				backends: [
+					{
+						name: "test",
+						apiClient: new BackendAPIClient({ baseUrl: "http://localhost:8000" }),
+					},
+				],
+				healthMonitor,
+				models: new (await import("../src/loadBalancing/providerModelsIndex")).ProviderModelsIndex(),
+			});
+			expect(provider).toBeDefined();
+			expect(provider.id).toBe("provider-1");
+			expect(provider.name).toBe("My Provider");
+		});
+
+		test("should create HealthMonitor instance", async () => {
+			const { HealthMonitor } = await import("../src/loadBalancing/healthMonitor");
+			const monitor = new HealthMonitor([
+				{ name: "a", baseUrl: "http://a.com" },
+				{ name: "b", baseUrl: "http://b.com" },
+			]);
+			expect(monitor.getAllStats()).toHaveLength(2);
+			expect(monitor.isHealthy(0)).toBe(true);
+			expect(monitor.isHealthy(1)).toBe(true);
+		});
+
 		test("should create HTTP client", async () => {
 			const { BackendAPIClient } = await import("../src/loadBalancing/backendAPIClient");
-			const backend = {
-				name: "test",
-				url: "http://localhost:8000",
-			};
-			const client = new BackendAPIClient(backend);
+			const client = new BackendAPIClient({ baseUrl: "http://localhost:8000" });
 			expect(client).toBeDefined();
 		});
 	});

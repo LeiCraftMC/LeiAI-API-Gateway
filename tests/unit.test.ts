@@ -1,295 +1,235 @@
 import { describe, test, expect } from "bun:test";
-import type { Backend } from "../src/utils/config/gatewayConfig";
+import { GatewayConfig } from "../src/utils/config/gatewayConfig";
+import { HealthMonitor } from "../src/loadBalancing/healthMonitor";
+import { LoadBalancer, type LoadBalancerBackend } from "../src/loadBalancing/loadBalancer";
+import { BackendAPIClient } from "../src/loadBalancing/backendAPIClient";
 
-describe("Configuration Types", () => {
-	describe("Backend Configuration", () => {
-		test("should create a valid backend config with minimal fields", () => {
-			const backend: Backend = {
-				name: "test-backend",
-				url: "http://localhost:8000",
-			};
-
-			expect(backend.name).toBe("test-backend");
-			expect(backend.baseUrl).toBe("http://localhost:8000");
-			expect(backend.apiKey).toBeUndefined();
-			expect(backend.proxyUrl).toBeUndefined();
+describe("GatewayConfig Types — ProviderBackend schema", () => {
+	test("should accept valid minimal config", () => {
+		const result = GatewayConfig.Types.ProviderBackend.safeParse({
+			name: "test-backend",
+			baseUrl: "http://localhost:8000",
 		});
-
-		test("should create a backend with API key", () => {
-			const backend: Backend = {
-				name: "openai",
-				url: "https://api.openai.com",
-				apiKey: "sk-1234567890",
-			};
-
-			expect(backend.apiKey).toBe("sk-1234567890");
-		});
-
-		test("should create a backend with SOCKS5 proxy", () => {
-			const backend: Backend = {
-				name: "remote-backend",
-				url: "http://remote.api.com",
-				proxyUrl: "socks5://proxy.example.com:1080",
-			};
-
-			expect(backend.proxyUrl).toBe("socks5://proxy.example.com:1080");
-		});
-
-		test("should create a backend with authenticated SOCKS5 proxy", () => {
-			const backend: Backend = {
-				name: "auth-proxy-backend",
-				url: "http://remote.api.com",
-				proxyUrl: "socks5://user:pass@proxy.example.com:1080",
-			};
-
-			expect(backend.proxyUrl).toBe("socks5://user:pass@proxy.example.com:1080");
-		});
-
-		test("should include health check configuration", () => {
-			const backend: Backend = {
-				name: "monitored-backend",
-				url: "http://localhost:8000",
-				healthCheckPath: "/health",
-				healthCheckInterval: 60000,
-			};
-
-			expect(backend.healthCheckPath).toBe("/health");
-			expect(backend.healthCheckInterval).toBe(60000);
-		});
+		expect(result.success).toBe(true);
+		if (result.success) {
+			expect(result.data.name).toBe("test-backend");
+			expect(result.data.baseUrl).toBe("http://localhost:8000");
+			expect(result.data.apiKey).toBeUndefined();
+			expect(result.data.proxyUrl).toBeUndefined();
+		}
 	});
 
-	describe("URL Validation", () => {
-		test("should support HTTP URLs", () => {
-			const backend: Backend = {
-				name: "http-backend",
-				url: "http://localhost:8000",
-			};
-
-			expect(backend.baseUrl).toMatch(/^http:\/\//);
+	test("should accept config with API key", () => {
+		const result = GatewayConfig.Types.ProviderBackend.safeParse({
+			name: "openai",
+			baseUrl: "https://api.openai.com",
+			apiKey: "sk-1234567890",
 		});
+		expect(result.success).toBe(true);
+	});
 
-		test("should support HTTPS URLs", () => {
-			const backend: Backend = {
-				name: "https-backend",
-				url: "https://api.example.com",
-			};
-
-			expect(backend.baseUrl).toMatch(/^https:\/\//);
+	test("should accept config with SOCKS5 proxy", () => {
+		const result = GatewayConfig.Types.ProviderBackend.safeParse({
+			name: "proxied",
+			baseUrl: "http://remote.api.com",
+			proxyUrl: "socks5://proxy.example.com:1080",
 		});
+		expect(result.success).toBe(true);
+	});
 
-		test("should support URLs with ports", () => {
-			const backend: Backend = {
-				name: "custom-port",
-				url: "http://localhost:9000",
-			};
-
-			expect(backend.baseUrl).toContain(":9000");
+	test("should reject empty name", () => {
+		const result = GatewayConfig.Types.ProviderBackend.safeParse({
+			name: "",
+			baseUrl: "http://localhost:8000",
 		});
+		expect(result.success).toBe(false);
+	});
 
-		test("should support URLs with paths", () => {
-			const backend: Backend = {
-				name: "with-path",
-				url: "http://localhost:8000/api/v1",
-			};
-
-			expect(backend.baseUrl).toContain("/api/v1");
+	test("should reject invalid URL", () => {
+		const result = GatewayConfig.Types.ProviderBackend.safeParse({
+			name: "bad-url",
+			baseUrl: "not-a-url",
 		});
+		expect(result.success).toBe(false);
+	});
+
+	test("should reject missing baseUrl", () => {
+		const result = GatewayConfig.Types.ProviderBackend.safeParse({
+			name: "no-url",
+		});
+		expect(result.success).toBe(false);
 	});
 });
 
-describe("Load Balancing Algorithm", () => {
-	test("should round-robin correctly with 2 backends", () => {
-		const backends: Backend[] = [
-			{ name: "a", url: "http://a" },
-			{ name: "b", url: "http://b" },
+describe("HealthMonitor", () => {
+	test("should mark all backends healthy on creation", () => {
+		const backends = [
+			{ name: "a", baseUrl: "http://a.com" },
+			{ name: "b", baseUrl: "http://b.com" },
 		];
+		const monitor = new HealthMonitor(backends);
+		expect(monitor.isHealthy(0)).toBe(true);
+		expect(monitor.isHealthy(1)).toBe(true);
+	});
 
-		const results: string[] = [];
-		for (let i = 0; i < 10; i++) {
-			results.push(backends[i % 2]?.name || "");
+	test("isHealthy should return true for unknown index", () => {
+		const monitor = new HealthMonitor([]);
+		expect(monitor.isHealthy(99)).toBe(true);
+	});
+
+	test("setHealthyness should mark backend unhealthy", () => {
+		const backends = [{ name: "a", baseUrl: "http://a.com" }];
+		const monitor = new HealthMonitor(backends);
+
+		monitor.setHealthyness(0, false);
+		expect(monitor.isHealthy(0)).toBe(false);
+	});
+
+	test("setHealthyness should recover backend", () => {
+		const backends = [{ name: "a", baseUrl: "http://a.com" }];
+		const monitor = new HealthMonitor(backends);
+
+		monitor.setHealthyness(0, false);
+		expect(monitor.isHealthy(0)).toBe(false);
+
+		monitor.setHealthyness(0, true);
+		expect(monitor.isHealthy(0)).toBe(true);
+	});
+
+	test("getHealthyBackends should return only healthy indices", () => {
+		const backends = [
+			{ name: "a", baseUrl: "http://a.com" },
+			{ name: "b", baseUrl: "http://b.com" },
+			{ name: "c", baseUrl: "http://c.com" },
+		];
+		const monitor = new HealthMonitor(backends);
+
+		monitor.setHealthyness(1, false);
+		const healthy = monitor.getHealthyBackends();
+		expect(healthy).toEqual([0, 2]);
+	});
+
+	test("getAllStats should return all statuses", () => {
+		const backends = [
+			{ name: "a", baseUrl: "http://a.com" },
+			{ name: "b", baseUrl: "http://b.com" },
+		];
+		const monitor = new HealthMonitor(backends);
+		const stats = monitor.getAllStats();
+
+		expect(stats).toHaveLength(2);
+		expect(stats[0]?.healthy).toBe(true);
+		expect(stats[1]?.healthy).toBe(true);
+	});
+
+	test("consecutive failures should increase timeout", () => {
+		const backends = [{ name: "a", baseUrl: "http://a.com" }];
+		const monitor = new HealthMonitor(backends);
+
+		monitor.setHealthyness(0, false);
+		const firstStatus = monitor.getAllStats()[0]!;
+		const firstTimeout = firstStatus.healthy ? 0 : firstStatus.timeoutEnds;
+
+		monitor.setHealthyness(0, false);
+		const secondStatus = monitor.getAllStats()[0]!;
+		const secondTimeout = secondStatus.healthy ? 0 : secondStatus.timeoutEnds;
+
+		if (!firstStatus.healthy && !secondStatus.healthy) {
+			// Second timeout should be larger (exponential backoff: 1s → 2s)
+			expect(secondTimeout - firstTimeout).toBeGreaterThanOrEqual(900);
+		}
+	});
+});
+
+describe("LoadBalancer — getNextBackendIndex", () => {
+	function makeLB(backendCount: number): LoadBalancer {
+		const configs = Array.from({ length: backendCount }, (_, i) => ({
+			name: `b${i}`,
+			baseUrl: `http://b${i}.com`,
+		}));
+		const monitor = new HealthMonitor(configs);
+		const backends: LoadBalancerBackend[] = configs.map((c) => ({
+			name: c.name,
+			apiClient: new BackendAPIClient(c),
+		}));
+		return new LoadBalancer("test", "/", backends, monitor);
+	}
+
+	test("should cycle through backends round-robin", () => {
+		const lb = makeLB(3);
+		const results: (number | null)[] = [];
+
+		for (let i = 0; i < 6; i++) {
+			results.push(lb.getNextBackendIndex());
 		}
 
-		expect(results).toEqual(["a", "b", "a", "b", "a", "b", "a", "b", "a", "b"]);
+		// First three are 0, 1, 2; then wrap to 0, 1, 2
+		expect(results).toEqual([0, 1, 2, 0, 1, 2]);
 	});
 
-	test("should distribute evenly with odd number of requests", () => {
-		const backends: Backend[] = [
-			{ name: "1", url: "http://1" },
-			{ name: "2", url: "http://2" },
-			{ name: "3", url: "http://3" },
+	test("should return null for empty backends", () => {
+		const lb = makeLB(0);
+		expect(lb.getNextBackendIndex()).toBeNull();
+	});
+
+	test("should always return 0 for single backend", () => {
+		const lb = makeLB(1);
+		for (let i = 0; i < 5; i++) {
+			expect(lb.getNextBackendIndex()).toBe(0);
+		}
+	});
+
+	test("should skip unhealthy backends", () => {
+		const configs = [
+			{ name: "healthy", baseUrl: "http://h.com" },
+			{ name: "sick", baseUrl: "http://s.com" },
+			{ name: "healthy2", baseUrl: "http://h2.com" },
 		];
+		const monitor = new HealthMonitor(configs);
+		const backends: LoadBalancerBackend[] = configs.map((c) => ({
+			name: c.name,
+			apiClient: new BackendAPIClient(c),
+		}));
+		const lb = new LoadBalancer("test", "/", backends, monitor);
 
-		const distribution: Record<string, number> = { 1: 0, 2: 0, 3: 0 };
+		monitor.setHealthyness(1, false);
 
-		for (let i = 0; i < 10; i++) {
-			const idx = i % backends.length;
-			const name = backends[idx]?.name;
-			if (name) {
-				distribution[name] = (distribution[name] ?? 0) + 1;
-			}
+		const results: (number | null)[] = [];
+		for (let i = 0; i < 4; i++) {
+			results.push(lb.getNextBackendIndex());
 		}
 
-		const total = Object.values(distribution).reduce((a, b) => a + b, 0);
-		expect(total).toBe(10);
+		// Should only return 0 and 2 (skip index 1)
+		expect(results).toEqual([0, 2, 0, 2]);
+	});
+
+	test("getAllBackends should return all backends", () => {
+		const lb = makeLB(2);
+		const all = lb.getAllBackends();
+		expect(all).toHaveLength(2);
+		expect(all[0]?.name).toBe("b0");
+		expect(all[1]?.name).toBe("b1");
 	});
 });
 
-describe("Request Path Handling", () => {
-	test("should combine base URL with path correctly", () => {
-		const baseUrl = "http://localhost:8000";
-		const path = "/v1/chat/completions";
-
-		const combined = new URL(path, baseUrl).toString();
-		expect(combined).toBe("http://localhost:8000/v1/chat/completions");
+describe("URL Construction", () => {
+	test("should combine base URL with path", () => {
+		const full = new URL("/v1/models", "http://localhost:8000").toString();
+		expect(full).toBe("http://localhost:8000/v1/models");
 	});
 
-	test("should preserve path with trailing slash", () => {
-		const baseUrl = "http://localhost:8000/api";
-		const path = "/v1/models";
-
-		const combined = new URL(path, baseUrl).toString();
-		expect(combined).toContain("/v1/models");
+	test("should preserve query parameters", () => {
+		const full = new URL("/search?q=test&limit=10", "http://localhost:8000").toString();
+		expect(full).toContain("q=test");
+		expect(full).toContain("limit=10");
 	});
 
-	test("should handle query strings", () => {
-		const baseUrl = "http://localhost:8000";
-		const pathAndQuery = "/models?format=json&limit=10";
-
-		const combined = new URL(pathAndQuery, baseUrl).toString();
-		expect(combined).toContain("format=json");
-		expect(combined).toContain("limit=10");
-	});
-
-	test("should handle complex paths", () => {
-		const baseUrl = "https://api.example.com";
-		const path = "/v1/chat/completions?model=gpt-4&stream=true";
-
-		const combined = new URL(path, baseUrl).toString();
-		expect(combined).toContain("model=gpt-4");
-		expect(combined).toContain("stream=true");
-	});
-});
-
-describe("Header Handling", () => {
-	test("should remove hop-by-hop headers", () => {
-		const hopByHopHeaders = [
-			"connection",
-			"keep-alive",
-			"transfer-encoding",
-			"upgrade",
-		];
-
-		const headers = new Headers({
-			"Content-Type": "application/json",
-			Authorization: "Bearer token",
-			Connection: "keep-alive",
-			"Keep-Alive": "timeout=5",
-			"Transfer-Encoding": "chunked",
-		});
-
-		const filtered = new Headers();
-		headers.forEach((value, key) => {
-			if (!hopByHopHeaders.includes(key.toLowerCase())) {
-				filtered.set(key, value);
-			}
-		});
-
-		expect(filtered.get("Content-Type")).toBe("application/json");
-		expect(filtered.get("Authorization")).toBe("Bearer token");
-		expect(filtered.get("Connection")).toBeNull();
-		expect(filtered.get("Keep-Alive")).toBeNull();
-	});
-
-	test("should preserve important headers", () => {
-		const headers = new Headers({
-			"Content-Type": "application/json",
-			Authorization: "Bearer sk-12345",
-			"X-Custom-Header": "custom-value",
-			"User-Agent": "test",
-		});
-
-		const important = ["content-type", "authorization", "x-custom-header"];
-		const preserved = new Headers();
-
-		headers.forEach((value, key) => {
-			if (important.includes(key.toLowerCase())) {
-				preserved.set(key, value);
-			}
-		});
-
-		expect(preserved.has("Content-Type")).toBe(true);
-		expect(preserved.has("Authorization")).toBe(true);
-		expect(preserved.has("X-Custom-Header")).toBe(true);
-	});
-});
-
-describe("HTTP Methods", () => {
-	test("should support all standard HTTP methods", () => {
-		const methods = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"];
-
-		methods.forEach((method) => {
-			expect(["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"]).toContain(method);
-		});
-	});
-
-	test("should distinguish between methods", () => {
-		expect("GET").not.toBe("POST");
-		expect("PUT").not.toBe("PATCH");
-		expect("DELETE").not.toBe("GET");
-	});
-});
-
-describe("Response Status Codes", () => {
-	test("should identify success status codes", () => {
-		const successCodes = [200, 201, 202, 204, 206];
-		successCodes.forEach((code) => {
-			expect(code >= 200 && code < 300).toBe(true);
-		});
-	});
-
-	test("should identify error status codes", () => {
-		const errorCodes = [400, 401, 403, 404, 500, 502, 503];
-		errorCodes.forEach((code) => {
-			expect(code >= 400).toBe(true);
-		});
-	});
-
-	test("should identify specific status meanings", () => {
-		expect(200).toBe(200); // OK
-		expect(500).toBe(500); // Internal Server Error
-		expect(503).toBe(503); // Service Unavailable
-	});
-});
-
-describe("Timeout Handling", () => {
-	test("should have default timeout", () => {
-		const defaultTimeout = 30000;
-		expect(defaultTimeout).toBe(30000);
-	});
-
-	test("should allow custom timeout", () => {
-		const customTimeout = 5000;
-		expect(customTimeout).toBeLessThan(30000);
-	});
-
-	test("should validate timeout values", () => {
-		const timeouts = [1000, 5000, 30000, 60000];
-		timeouts.forEach((timeout) => {
-			expect(timeout > 0).toBe(true);
-		});
-	});
-});
-
-describe("Health Check Paths", () => {
-	test("should use default health check path", () => {
-		const defaultPath = "/v1/models";
-		expect(defaultPath).toMatch(/^\/v1/);
-	});
-
-	test("should support custom health check paths", () => {
-		const paths = ["/health", "/status", "/ping", "/v1/models"];
-		paths.forEach((path) => {
-			expect(path.startsWith("/")).toBe(true);
-		});
+	test("should handle complex URLs", () => {
+		const full = new URL(
+			"/v1/chat/completions?model=gpt-4&stream=true",
+			"https://api.openai.com",
+		).toString();
+		expect(full).toContain("model=gpt-4");
+		expect(full).toContain("stream=true");
 	});
 });
