@@ -1,17 +1,17 @@
 version: '3.8'
 
 services:
-  load-balancer:
+  leiai-api-gateway:
     image: gcr.leicraftmc.de/leicraftmc/leiai/api-gateway:latest
     ports:
-      - "3000:3000"
+      - "12117:12117"
     environment:
-      - CONFIG_PATH=/app/config.json
+      - LAG_LOG_LEVEL=info
     volumes:
-      - ./config.json:/app/config.json:ro
+      - /opt/leiai/api-gateway/config.json:/app/config.json:ro
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/_health"]
+      test: ["CMD", "curl", "-f", "http://localhost:12117/health"]
       interval: 30s
       timeout: 10s
       retries: 3

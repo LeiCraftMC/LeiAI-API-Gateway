@@ -8,6 +8,8 @@ COPY ./build/bin/leiai-api-gateway-linux-x64-baseline /usr/local/bin/leiai-api-g
 
 RUN chmod u+x /usr/local/bin/leiai-api-gateway
 
-EXPOSE 3000/tcp
+EXPOSE 12117/tcp
+
+ENV LAG_CONFIG_BASE_DIR=/app
 
 ENTRYPOINT ["/usr/local/bin/leiai-api-gateway"]
