@@ -29,7 +29,7 @@ export class ProviderModelsIndex {
                 const data = (await response.json()) as {
                     data: Array<{
                         id: string,
-                        created: number
+                        created?: number
                     }>
                 };
                 if (data && Array.isArray(data.data)) {
@@ -37,11 +37,11 @@ export class ProviderModelsIndex {
                     const newModelsforThisBackend = new Map<string, ProviderModelsIndex.ModelData>();
 
                     for (const model of data.data) {
-                        if (typeof model.id !== "string" || typeof model.created !== "number") {
+                        if (typeof model.id !== "string") {
                             Logger.warn(`Invalid model data from backend:`, model);
                             continue;
                         }
-                        newModelsforThisBackend.set(model.id, { id: model.id, created: model.created });
+                        newModelsforThisBackend.set(model.id, { id: model.id, created: model.created || Date.now() });
                     }
                     newModels.push(newModelsforThisBackend);
                 }
