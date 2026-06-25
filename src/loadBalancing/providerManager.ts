@@ -27,6 +27,10 @@ export class ProviderManager {
 
         for (const provider of providers) {
             this.providers.set(provider.id, new Provider(provider));
+            await this.providers.get(provider.id)?.healthMonitor.updateHealthStatuses();
+            await this.providers.get(provider.id)?.models.refreshModelsList(
+                this.providers.get(provider.id)?.backends.map((backend) => backend.apiClient) ?? []
+            );
         }
     }
 
