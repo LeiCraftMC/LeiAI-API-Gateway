@@ -1,6 +1,5 @@
 import { Hono } from "hono";
 import { ProviderManager } from "../../../../loadBalancing/providerManager";
-import { Provider } from "../../../../loadBalancing/loadBalancer";
 import { Logger } from "../../../../utils/logger";
 import { GatewayConfig } from "../../../../utils/config/gatewayConfig";
 import type { AuthContext } from "../auth";
@@ -15,35 +14,76 @@ export const router = new Hono();
  * Resolve a model name to the owning provider and the bare model name
  * to send to the backend.
  *
- * Models are surfaced as `providerId/modelName` by the `/v1/models`
- * endpoint, so incoming requests normally carry the `/`.  Aliases
- * defined in the custom model mapping are the only case where a model
- * arrives without a `/` — they are resolved through the mapping and
- * then the real (prefixed) name is re-resolved recursively.
+ * **When custom model mapping is configured**, only mapping aliases are
+ * accepted.  Direct `providerId/modelName` access is blocked so the
+ * internal model structure is never exposed to end users.
+ *
+ * **When no custom model mapping** is configured, models are resolved
+ * directly in `providerId/modelName` format (as surfaced by `/v1/models`).
  */
 export function resolveModel(model: string): {
 	providerId: string;
 	providerName: string;
 	bareModel: string;
 } | null {
-	// Model contains a "/" → first segment is the provider ID
+	const gatewayConfig = GatewayConfig.getConfig();
+	const mapping = gatewayConfig?.customModels?.mapping;
+	const hasCustomMapping = mapping && Object.keys(mapping).length > 0;
+
+	if (hasCustomMapping) {
+		// Custom model mapping is active:
+		//   - Only aliases defined in the mapping are accepted
+		//   - Direct providerId/modelName is blocked
+		const realModel = mapping[model];
+		if (!realModel) return null;
+		return resolvePrefixedModel(realModel);
+	}
+
+	// No custom mapping: standard providerId/modelName resolution
 	const slashIdx = model.indexOf("/");
 	if (slashIdx !== -1) {
 		const providerId = model.slice(0, slashIdx);
 		const bareModel = model.slice(slashIdx + 1);
-		const providerData = ProviderManager.getProviderData(providerId);
-		if (providerData) {
-			return { providerId, providerName: providerData.name, bareModel };
+		const provider = ProviderManager.getProvider(providerId);
+		if (provider) {
+			return { providerId, providerName: provider.name, bareModel };
 		}
 	}
 
-	// No "/" — only possible via custom model mapping alias
-	const gatewayConfig = GatewayConfig.getConfig();
-	if (gatewayConfig?.customModels?.mapping) {
-		const realModel = gatewayConfig.customModels.mapping[model];
-		if (realModel) {
-			return resolveModel(realModel); // recurse — real model has a "/"
+	return null;
+}
+
+/**
+ * Resolve a model string in `"providerId/bareModel"` format from within
+ * the custom model mapping.  Unlike {@link resolveModel}, this is an
+ * internal-only helper that does **not** consult the mapping again for
+ * `providerId/modelName` strings — it always treats them as direct
+ * provider lookups.
+ *
+ * Values without a `/` are treated as alias chains and looked up
+ * recursively in the mapping (supporting `alias → anotherAlias` setups).
+ */
+function resolvePrefixedModel(prefixed: string): {
+	providerId: string;
+	providerName: string;
+	bareModel: string;
+} | null {
+	const slashIdx = prefixed.indexOf("/");
+	if (slashIdx !== -1) {
+		// Direct provider/model format — resolve immediately
+		const providerId = prefixed.slice(0, slashIdx);
+		const bareModel = prefixed.slice(slashIdx + 1);
+		const provider = ProviderManager.getProvider(providerId);
+		if (provider) {
+			return { providerId, providerName: provider.name, bareModel };
 		}
+	}
+
+	// No "/" — treat as another alias and follow the chain
+	const gatewayConfig = GatewayConfig.getConfig();
+	const mapping = gatewayConfig?.customModels?.mapping;
+	if (mapping && mapping[prefixed]) {
+		return resolvePrefixedModel(mapping[prefixed]);
 	}
 
 	return null;
@@ -205,8 +245,8 @@ function createProxyHandler(targetPath: string) {
 				}, 404);
 			}
 
-			const providerData = ProviderManager.getProviderData(resolved.providerId);
-			if (!providerData) {
+			const provider = ProviderManager.getProvider(resolved.providerId);
+			if (!provider) {
 				return c.json({
 					error: {
 						message: `Provider "${resolved.providerId}" not available`,
@@ -238,7 +278,7 @@ function createProxyHandler(targetPath: string) {
 			// Rewrite model field to bare name and forward
 			const rewrittenBody = rewriteModelField(bodyText, resolved.bareModel);
 
-			const provider = new Provider(providerData);
+			
 			const rawRequest = c.req.raw as Request;
 			const response = await provider.forwardRequest(
 				targetPath,

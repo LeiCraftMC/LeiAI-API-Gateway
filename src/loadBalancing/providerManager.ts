@@ -2,11 +2,12 @@ import type { GatewayConfig } from "../utils/config/gatewayConfig";
 import { BackendAPIClient } from "./backendAPIClient";
 import { HealthMonitor } from "./healthMonitor";
 import { ProviderModelsIndex } from "./providerModelsIndex";
+import { LoadBalancer } from "./loadBalancer";
 
 
 export class ProviderManager {
 
-    private static readonly providers = new Map<string, ProviderManager.ProviderData>();
+    private static readonly providers = new Map<string, Provider>();
     private static needsModelFetching: boolean;
 
     private static _initialized: boolean = false;
@@ -25,53 +26,41 @@ export class ProviderManager {
         this.needsModelFetching = needsModelFetching;
 
         for (const provider of providers) {
-            const healthMonitor = new HealthMonitor(provider.backends);
-            this.providers.set(provider.id, {
-                id: provider.id,
-                name: provider.name,
-                backends: provider.backends.map((backend) => ({
-                    name: backend.name,
-                    apiClient: new BackendAPIClient({
-                        baseUrl: backend.baseUrl,
-                        apiKey: backend.apiKey,
-                        proxyUrl: backend.proxyUrl,
-                    }),
-                })),
-                healthMonitor,
-                models: new ProviderModelsIndex(),
-            });
+            this.providers.set(provider.id, new Provider(provider));
         }
     }
 
     static async refreshHealthMonitorData() {
-        for (const providerData of this.providers.values()) {
-            await providerData.healthMonitor.updateHealthStatuses();
+        for (const provider of this.providers.values()) {
+            await provider.healthMonitor.updateHealthStatuses();
         }
     }
 
     static async refreshModelsData() {
         if (!this.needsModelFetching) return;
-        for (const providerData of this.providers.values()) {
-            await providerData.models.refreshModelsList(
-                providerData.backends.map((backend) => backend.apiClient)
+        for (const provider of this.providers.values()) {
+            await provider.models.refreshModelsList(
+                provider.backends.map((backend) => backend.apiClient)
             );
         }
     }
 
-    static getProviderData(providerId: string): ProviderManager.ProviderData | undefined {
+    /** Return a cached provider instance (with round-robin state). */
+    static getProvider(providerId: string): Provider | undefined {
         return this.providers.get(providerId);
     }
 
-    static getAllProvidersData(): ProviderManager.ProviderData[] {
+    /** Return all provider instances. */
+    static getAllProviders(): Provider[] {
         return Array.from(this.providers.values());
     }
 
     static getAllModels(): Map<string, ProviderModelsIndex.ModelData> {
         const allModels = new Map<string, ProviderModelsIndex.ModelData>();
 
-        for (const providerData of this.providers.values()) {
-            for (const [modelId, modelData] of providerData.models.getModels()) {
-                allModels.set(`${providerData.id}/${modelId}`, modelData);
+        for (const provider of this.providers.values()) {
+            for (const [modelId, modelData] of provider.models.getModels()) {
+                allModels.set(`${provider.id}/${modelId}`, modelData);
             }
         }
 
@@ -80,17 +69,55 @@ export class ProviderManager {
 
 }
 
-export namespace ProviderManager {
+    /**
+     * A provider instance with its backends, health monitor, model index,
+     * and round-robin LoadBalancer.  Created once in {@link ProviderManager.init}
+     * and reused across requests so load-balancing state persists.
+     */
+    export class Provider {
+        public readonly id: string;
+        public readonly name: string;
+        public readonly backends: Provider.Backend[];
+        public readonly healthMonitor: HealthMonitor;
+        public readonly models: ProviderModelsIndex;
+        public readonly loadBalancer: LoadBalancer;
 
-    export interface ProviderData {
-        id: string;
-        name: string;
-        backends: ProviderManager.ProviderBackend[];
-        healthMonitor: HealthMonitor;
-        models: ProviderModelsIndex
+        constructor(config: GatewayConfig.Types.Provider) {
+            this.id = config.id;
+            this.name = config.name;
+            this.healthMonitor = new HealthMonitor(config.backends);
+            this.backends = config.backends.map((backend) => ({
+                name: backend.name,
+                apiClient: new BackendAPIClient({
+                    baseUrl: backend.baseUrl,
+                    apiKey: backend.apiKey,
+                    proxyUrl: backend.proxyUrl,
+                }),
+            }));
+            this.models = new ProviderModelsIndex();
+            this.loadBalancer = new LoadBalancer(
+                this.id,
+                "/",
+                this.backends.map((b) => ({ name: b.name, apiClient: b.apiClient })),
+                this.healthMonitor,
+            );
+        }
+
+        async forwardRequest(
+            pathname: string,
+            searchParams: string,
+            method: string,
+            headers: Headers,
+            body?: string,
+        ): Promise<Response> {
+            return this.loadBalancer.forwardRequest(pathname, searchParams, method, headers, body);
+        }
     }
 
-    export interface ProviderBackend extends Omit<GatewayConfig.Types.ProviderBackend, 'baseUrl' | 'apiKey' | 'proxyUrl'> {
+export namespace Provider {
+
+    export interface Backend extends Omit<GatewayConfig.Types.ProviderBackend, 'baseUrl' | 'apiKey' | 'proxyUrl'> {
+        name: string;
         apiClient: BackendAPIClient;
     }
 

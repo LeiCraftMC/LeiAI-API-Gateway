@@ -1,5 +1,6 @@
 import { describe, test, expect } from "bun:test";
-import { LoadBalancer, Provider, type LoadBalancerBackend } from "../src/loadBalancing/loadBalancer";
+import { LoadBalancer, type LoadBalancerBackend } from "../src/loadBalancing/loadBalancer";
+import { Provider, ProviderManager } from "../src/loadBalancing/providerManager";
 import { HealthMonitor } from "../src/loadBalancing/healthMonitor";
 import { BackendAPIClient } from "../src/loadBalancing/backendAPIClient";
 import { ProviderModelsIndex } from "../src/loadBalancing/providerModelsIndex";
@@ -130,19 +131,10 @@ describe("Provider — forwardRequest", () => {
 		const fake = new FakeOpenAICompatibleAPI();
 		await fake.start();
 
-		const backend = { name: "fake-backend", baseUrl: fake.baseUrl };
-		const healthMonitor = new HealthMonitor([backend]);
 		const provider = new Provider({
 			id: "test-provider",
 			name: "Test Provider",
-			backends: [
-				{
-					name: backend.name,
-					apiClient: new BackendAPIClient(backend),
-				},
-			],
-			healthMonitor,
-			models: new ProviderModelsIndex(),
+			backends: [{ name: "fake-backend", baseUrl: fake.baseUrl }],
 		});
 
 		const body = JSON.stringify({ model: "gpt-4", messages: [] });

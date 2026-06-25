@@ -1,6 +1,5 @@
 import { BackendAPIClient } from "./backendAPIClient"
 import { HealthMonitor } from "./healthMonitor"
-import { ProviderManager } from "./providerManager";
 import { Logger } from "../utils/logger";
 
 /* ------------------------------------------------------------------ */
@@ -167,44 +166,5 @@ export class LoadBalancer {
 			}
 		});
 		return forwardHeaders;
-	}
-}
-
-/* ------------------------------------------------------------------ */
-/*  Provider  —  Wraps a provider with its own LoadBalancer            */
-/* ------------------------------------------------------------------ */
-
-/**
- * Wraps a `ProviderManager.ProviderData` entry with a ready-to-use
- * `LoadBalancer` so the OpenAI-compatible routes can forward requests
- * without managing backend selection or health directly.
- */
-export class Provider {
-	public readonly id: string;
-	public readonly name: string;
-	public readonly loadBalancer: LoadBalancer;
-
-	constructor(providerData: ProviderManager.ProviderData) {
-		this.id = providerData.id;
-		this.name = providerData.name;
-		this.loadBalancer = new LoadBalancer(
-			providerData.id,
-			"/",
-			providerData.backends.map((b) => ({
-				name: b.name,
-				apiClient: b.apiClient,
-			})),
-			providerData.healthMonitor,
-		);
-	}
-
-	async forwardRequest(
-		pathname: string,
-		searchParams: string,
-		method: string,
-		headers: Headers,
-		body?: string,
-	): Promise<Response> {
-		return this.loadBalancer.forwardRequest(pathname, searchParams, method, headers, body);
 	}
 }

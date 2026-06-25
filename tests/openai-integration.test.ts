@@ -50,19 +50,14 @@ describe("resolveModel", () => {
 		(ApiKeysConfig as any).config = null;
 	});
 
-	test("should resolve a model with provider prefix", () => {
+	test("should block direct provider/model access when custom mapping is active", () => {
 		const result = resolveModel("provider-1/gpt-4");
-		expect(result).not.toBeNull();
-		expect(result!.providerId).toBe("provider-1");
-		expect(result!.providerName).toBe("Provider One");
-		expect(result!.bareModel).toBe("gpt-4");
+		expect(result).toBeNull();
 	});
 
-	test("should resolve a model with a different provider", () => {
+	test("should block direct provider/model access even for known providers", () => {
 		const result = resolveModel("provider-2/claude-3");
-		expect(result).not.toBeNull();
-		expect(result!.providerId).toBe("provider-2");
-		expect(result!.bareModel).toBe("claude-3");
+		expect(result).toBeNull();
 	});
 
 	test("should resolve custom model mapping alias", () => {
@@ -188,9 +183,9 @@ describe("v1 API Routes", () => {
 		);
 
 		// Seed the model index by fetching /v1/models from the fake backend
-		const providerData = ProviderManager.getProviderData("provider-1")!;
-		await providerData.models.refreshModelsList(
-			providerData.backends.map((b) => b.apiClient),
+		const provider = ProviderManager.getProvider("provider-1")!;
+		await provider.models.refreshModelsList(
+			provider.backends.map((b) => b.apiClient),
 		);
 
 		// Build the Hono test app (auth + v1 routes)
@@ -437,9 +432,9 @@ describe("v1 API Routes with custom model mapping", () => {
 		);
 
 		// Seed models
-		const providerData = ProviderManager.getProviderData("anthropic")!;
-		await providerData.models.refreshModelsList(
-			providerData.backends.map((b) => b.apiClient),
+		const provider = ProviderManager.getProvider("anthropic")!;
+		await provider.models.refreshModelsList(
+			provider.backends.map((b) => b.apiClient),
 		);
 
 		app = new Hono();

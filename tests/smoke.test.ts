@@ -11,7 +11,6 @@ describe("Smoke Tests", () => {
 		test("should import load balancer module", async () => {
 			const lb = await import("../src/loadBalancing/loadBalancer");
 			expect(lb.LoadBalancer).toBeDefined();
-			expect(lb.Provider).toBeDefined();
 		});
 
 		test("should import health check module", async () => {
@@ -27,6 +26,7 @@ describe("Smoke Tests", () => {
 		test("should import provider manager module", async () => {
 			const pm = await import("../src/loadBalancing/providerManager");
 			expect(pm.ProviderManager).toBeDefined();
+			expect(pm.Provider).toBeDefined();
 		});
 	});
 
@@ -55,24 +55,12 @@ describe("Smoke Tests", () => {
 		});
 
 		test("should create Provider instance", async () => {
-			const { Provider } = await import("../src/loadBalancing/loadBalancer");
-			const { HealthMonitor } = await import("../src/loadBalancing/healthMonitor");
-			const { BackendAPIClient } = await import("../src/loadBalancing/backendAPIClient");
+			const { Provider } = await import("../src/loadBalancing/providerManager");
 
-			const healthMonitor = new HealthMonitor([
-				{ name: "test", baseUrl: "http://localhost:8000" },
-			]);
 			const provider = new Provider({
 				id: "provider-1",
 				name: "My Provider",
-				backends: [
-					{
-						name: "test",
-						apiClient: new BackendAPIClient({ baseUrl: "http://localhost:8000" }),
-					},
-				],
-				healthMonitor,
-				models: new (await import("../src/loadBalancing/providerModelsIndex")).ProviderModelsIndex(),
+				backends: [{ name: "test", baseUrl: "http://localhost:8000" }],
 			});
 			expect(provider).toBeDefined();
 			expect(provider.id).toBe("provider-1");
