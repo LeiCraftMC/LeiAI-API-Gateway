@@ -12,15 +12,21 @@ export const router = new Hono();
 /* ------------------------------------------------------------------ */
 
 /**
- * Resolve a model name (possibly `providerId/modelName`) to the
- * owning provider and the bare model name to send to the backend.
+ * Resolve a model name to the owning provider and the bare model name
+ * to send to the backend.
+ *
+ * Models are surfaced as `providerId/modelName` by the `/v1/models`
+ * endpoint, so incoming requests normally carry the `/`.  Aliases
+ * defined in the custom model mapping are the only case where a model
+ * arrives without a `/` — they are resolved through the mapping and
+ * then the real (prefixed) name is re-resolved recursively.
  */
 function resolveModel(model: string): {
 	providerId: string;
 	providerName: string;
 	bareModel: string;
 } | null {
-	// Direct match: model contains a "/" — first segment is the provider ID
+	// Model contains a "/" → first segment is the provider ID
 	const slashIdx = model.indexOf("/");
 	if (slashIdx !== -1) {
 		const providerId = model.slice(0, slashIdx);
@@ -31,24 +37,12 @@ function resolveModel(model: string): {
 		}
 	}
 
-	// Check custom models mapping for an alias → real model resolution
+	// No "/" — only possible via custom model mapping alias
 	const gatewayConfig = GatewayConfig.getConfig();
 	if (gatewayConfig?.customModels?.mapping) {
 		const realModel = gatewayConfig.customModels.mapping[model];
 		if (realModel) {
-			return resolveModel(realModel); // recurse — real model may have provider prefix
-		}
-	}
-
-	// Could be a bare model name — search every provider's model list
-	const allProviders = ProviderManager.getAllProvidersData();
-	for (const providerData of allProviders) {
-		if (providerData.models.getModels().has(model)) {
-			return {
-				providerId: providerData.id,
-				providerName: providerData.name,
-				bareModel: model,
-			};
+			return resolveModel(realModel); // recurse — real model has a "/"
 		}
 	}
 
