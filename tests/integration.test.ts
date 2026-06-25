@@ -50,7 +50,7 @@ describe("LoadBalancer — forwardRequest", () => {
 		const body = JSON.stringify({ model: "gpt-4", messages: [{ role: "user", content: "Hi" }] });
 
 		const response = await lb.forwardRequest(
-			"/v1/chat/completions",
+			"/chat/completions",
 			"",
 			"POST",
 			new Headers({ "Content-Type": "application/json" }),
@@ -98,7 +98,7 @@ describe("LoadBalancer — forwardRequest", () => {
 		];
 		const lb = new LoadBalancer("test", "/", backends, monitor);
 
-		await lb.forwardRequest("/v1/models", "", "GET", new Headers());
+		await lb.forwardRequest("/models", "", "GET", new Headers());
 		expect(monitor.isHealthy(0)).toBe(false);
 	});
 
@@ -116,7 +116,7 @@ describe("LoadBalancer — forwardRequest", () => {
 		];
 		const lb = new LoadBalancer("test", "/custom-prefix", backends, monitor);
 
-		await lb.forwardRequest("/custom-prefix/v1/models", "?detail=true", "GET", new Headers());
+		await lb.forwardRequest("/custom-prefix/models", "?detail=true", "GET", new Headers());
 
 		const recorded = fake.requests.find((r) => r.method === "GET");
 		expect(recorded).toBeDefined();
@@ -139,7 +139,7 @@ describe("Provider — forwardRequest", () => {
 
 		const body = JSON.stringify({ model: "gpt-4", messages: [] });
 		const response = await provider.forwardRequest(
-			"/v1/chat/completions",
+			"/chat/completions",
 			"",
 			"POST",
 			new Headers({ "Content-Type": "application/json" }),

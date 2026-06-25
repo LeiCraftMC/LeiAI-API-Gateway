@@ -307,16 +307,16 @@ function createProxyHandler(targetPath: string) {
 /*  Chat Completions   POST /v1/chat/completions                       */
 /* ------------------------------------------------------------------ */
 
-router.post("/chat/completions", createProxyHandler("/v1/chat/completions"));
+router.post("/chat/completions", createProxyHandler("/chat/completions"));
 
 /* ------------------------------------------------------------------ */
 /*  Text Completions   POST /v1/completions                            */
 /* ------------------------------------------------------------------ */
 
-router.post("/completions", createProxyHandler("/v1/completions"));
+router.post("/completions", createProxyHandler("/completions"));
 
 /* ------------------------------------------------------------------ */
 /*  Embeddings        POST /v1/embeddings                              */
 /* ------------------------------------------------------------------ */
 
-router.post("/embeddings", createProxyHandler("/v1/embeddings"));
+router.post("/embeddings", createProxyHandler("/embeddings"));

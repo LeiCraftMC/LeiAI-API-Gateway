@@ -105,6 +105,7 @@ export class FakeOpenAICompatibleAPI {
 				}
 
 				if (url.pathname === "/v1/models") {
+                    console.log("FakeOpenAICompatibleAPI: /v1/models request received");
 					return Response.json({
 						object: "list",
 						data: [
@@ -122,12 +123,9 @@ export class FakeOpenAICompatibleAPI {
 
 	get baseUrl(): string {
 		if (!this.server) throw new Error("Fake server not started. Call start() first.");
-		return `http://${this.server.hostname}:${this.server.port}`;
+		return `http://${this.server.hostname}:${this.server.port}/v1`;
 	}
 
-	getUrl(): string {
-		return this.baseUrl + "/v1";
-	}
 
 	async stop(): Promise<void> {
 		this.server?.stop();

@@ -23,7 +23,7 @@ describe("SOCKS5 Streaming with real servers", () => {
 
 		backend = {
 			name: "socks-proxied-backend",
-			baseUrl: fakeApi.getUrl(),
+			baseUrl: fakeApi.baseUrl,
 			proxyUrl,
 		};
 	});
@@ -141,7 +141,7 @@ describe("SOCKS5 with authentication", () => {
 
 		backend = {
 			name: "auth-socks-backend",
-			baseUrl: fakeApi.getUrl(),
+			baseUrl: fakeApi.baseUrl,
 			proxyUrl,
 		};
 	});

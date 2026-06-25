@@ -31,12 +31,12 @@ describe("resolveModel", () => {
 				{
 					id: "provider-1",
 					name: "Provider One",
-					backends: [{ name: "b1", baseUrl: "http://localhost:18001" }],
+					backends: [{ name: "b1", baseUrl: "http://localhost:18001/v1" }],
 				},
 				{
 					id: "provider-2",
 					name: "Provider Two",
-					backends: [{ name: "b2", baseUrl: "http://localhost:18002" }],
+					backends: [{ name: "b2", baseUrl: "http://localhost:18002/v1" }],
 				},
 			],
 			false,
