@@ -81,6 +81,7 @@ export class ProviderManager {
     export class Provider {
         public readonly id: string;
         public readonly name: string;
+        public readonly fixReasoningContent: boolean;
         public readonly backends: Provider.Backend[];
         public readonly healthMonitor: HealthMonitor;
         public readonly models: ProviderModelsIndex;
@@ -89,6 +90,7 @@ export class ProviderManager {
         constructor(config: GatewayConfig.Types.Provider) {
             this.id = config.id;
             this.name = config.name;
+            this.fixReasoningContent = config.fixReasoningContent ?? false;
             this.healthMonitor = new HealthMonitor(config.backends);
             this.backends = config.backends.map((backend) => ({
                 name: backend.name,

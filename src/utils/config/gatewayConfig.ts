@@ -40,6 +40,7 @@ export namespace GatewayConfig.Types {
 		id: z.string().min(1, "Provider ID cannot be empty").regex(/^[a-z0-9-]+$/, "Provider ID can only be lowercase letters, numbers, and hyphens"),
 		name: z.string().min(1, "Provider name cannot be empty"),
 		backends: z.array(ProviderBackend),
+		fixReasoningContent: z.boolean().optional(),
 	});
 	export type Provider = z.infer<typeof Provider>;
 

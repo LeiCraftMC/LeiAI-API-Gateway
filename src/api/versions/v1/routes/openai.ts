@@ -107,6 +107,37 @@ export function rewriteModelField(body: string, bareModel: string): string {
 }
 
 /**
+ * For providers with `fixReasoningContent` enabled, inject
+ * `reasoning_content` on every assistant message that is missing it.
+ *
+ * DeepSeek's thinking mode requires `reasoning_content` to be echoed
+ * back on **every** assistant message in multi-turn conversations with
+ * tool calls.  Some upstream clients (e.g. Open WebUI) strip this field
+ * when converting between API formats, including on messages where
+ * `content` is `null` (tool-call-only responses).
+ */
+export function injectReasoningContent(body: string): string {
+	try {
+		const parsed = JSON.parse(body);
+		if (Array.isArray(parsed?.messages)) {
+			let fixedCount = 0;
+			for (const msg of parsed.messages) {
+				if (msg.role === "assistant" && !msg.reasoning_content && typeof msg.content === "string") {
+					msg.reasoning_content = msg.content;
+					fixedCount++;
+				}
+			}
+			if (fixedCount > 0) {
+				Logger.debug(`Injected reasoning_content on ${fixedCount} assistant message(s)`);
+			}
+		}
+		return JSON.stringify(parsed);
+	} catch {
+		return body;
+	}
+}
+
+/**
  * Rewrite the `model` field in a JSON response body so the client
  * receives the user-facing model name (alias or providerId/modelName).
  */
@@ -349,17 +380,18 @@ function createProxyHandler(targetPath: string) {
 
 			// Rewrite model field to bare name and forward
 			const rewrittenBody = rewriteModelField(bodyText, resolved.bareModel);
+			const finalBody = provider.fixReasoningContent ? injectReasoningContent(rewrittenBody) : rewrittenBody;
 
-			Logger.debug(`Request on model "${model}" → ${resolved.providerId}/${resolved.bareModel} forwarded: ${JSON.stringify(rewrittenBody).slice(0, 2000)}`);
+			Logger.debug(`Request on model "${model}" → ${resolved.providerId}/${resolved.bareModel} forwarded: ${JSON.stringify(finalBody).slice(0, 2000)}`);
 
-			
+
 			const rawRequest = c.req.raw as Request;
 			const response = await provider.forwardRequest(
 				targetPath,
 				rawRequest.url.includes("?") ? "?" + rawRequest.url.split("?")[1] : "",
 				rawRequest.method,
 				rawRequest.headers,
-				rewrittenBody,
+				finalBody,
 			);
 
 			// Convert Headers to a plain record for c.newResponse
