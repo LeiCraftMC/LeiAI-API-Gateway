@@ -108,27 +108,22 @@ export function rewriteModelField(body: string, bareModel: string): string {
 
 /**
  * For providers with `fixReasoningContent` enabled, inject
- * `reasoning_content` on every assistant message that is missing it.
+ * `reasoning_content` on assistant messages that have `content`
+ * but are missing `reasoning_content`.
  *
- * DeepSeek's thinking mode requires `reasoning_content` to be echoed
- * back on **every** assistant message in multi-turn conversations with
- * tool calls.  Some upstream clients (e.g. Open WebUI) strip this field
- * when converting between API formats, including on messages where
- * `content` is `null` (tool-call-only responses).
+ * DeepSeek's thinking mode requires `reasoning_content` to be
+ * echoed back on every assistant message in multi-turn conversations
+ * with tool calls.  Some upstream clients (e.g. Open WebUI) strip
+ * this field when converting between API formats.
  */
 export function injectReasoningContent(body: string): string {
 	try {
 		const parsed = JSON.parse(body);
 		if (Array.isArray(parsed?.messages)) {
-			let fixedCount = 0;
 			for (const msg of parsed.messages) {
-				if (msg.role === "assistant" && !msg.reasoning_content) {
-					msg.reasoning_content = typeof msg.content === "string" ? msg.content : "";
-					fixedCount++;
+				if (msg.role === "assistant" && typeof msg.content === "string" && msg.content.length > 0 && !msg.reasoning_content) {
+					msg.reasoning_content = msg.content;
 				}
-			}
-			if (fixedCount > 0) {
-				Logger.debug(`Injected reasoning_content on ${fixedCount} assistant message(s)`);
 			}
 		}
 		return JSON.stringify(parsed);
