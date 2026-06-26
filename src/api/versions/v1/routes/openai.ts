@@ -122,8 +122,8 @@ export function injectReasoningContent(body: string): string {
 		if (Array.isArray(parsed?.messages)) {
 			let fixedCount = 0;
 			for (const msg of parsed.messages) {
-				if (msg.role === "assistant" && !msg.reasoning_content && typeof msg.content === "string") {
-					msg.reasoning_content = msg.content;
+				if (msg.role === "assistant" && !msg.reasoning_content) {
+					msg.reasoning_content = typeof msg.content === "string" ? msg.content : "";
 					fixedCount++;
 				}
 			}
