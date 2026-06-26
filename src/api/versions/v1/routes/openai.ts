@@ -275,6 +275,8 @@ function createProxyHandler(targetPath: string) {
 				}
 			}
 
+			Logger.debug(`Request on model "${model}" resolved to provider "${resolved.providerName}" (bare model: "${resolved.bareModel}") input: ${JSON.stringify(bodyText, null, 2)}`);
+
 			// Rewrite model field to bare name and forward
 			const rewrittenBody = rewriteModelField(bodyText, resolved.bareModel);
 
