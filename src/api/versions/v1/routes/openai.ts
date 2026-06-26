@@ -106,6 +106,78 @@ export function rewriteModelField(body: string, bareModel: string): string {
 	}
 }
 
+/**
+ * Rewrite the `model` field in a JSON response body so the client
+ * receives the user-facing model name (alias or providerId/modelName).
+ */
+export function rewriteResponseModel(body: string, modelName: string): string {
+	try {
+		const parsed = JSON.parse(body);
+		if (typeof parsed?.model === "string" && parsed.model !== modelName) {
+			parsed.model = modelName;
+		}
+		return JSON.stringify(parsed);
+	} catch {
+		// Not valid JSON — pass through unchanged
+		return body;
+	}
+}
+
+/**
+ * Create a TransformStream that rewrites the `model` field in SSE
+ * `data: {...}` lines to the user-facing model name.
+ *
+ * Lines that are not `data: {...}` JSON (e.g. `data: [DONE]`) pass
+ * through unchanged.
+ */
+export function createSSEModelRewriteTransform(
+	modelName: string,
+): TransformStream<Uint8Array, Uint8Array> {
+	const decoder = new TextDecoder();
+	const encoder = new TextEncoder();
+	let buffer = "";
+
+	return new TransformStream({
+		transform(chunk: Uint8Array, controller) {
+			buffer += decoder.decode(chunk, { stream: true });
+			const lines = buffer.split("\n");
+			// Keep the last (possibly incomplete) line in the buffer
+			buffer = lines.pop() ?? "";
+
+			for (const line of lines) {
+				if (line.startsWith("data: ") && !line.startsWith("data: [DONE]")) {
+					const jsonStr = line.slice(6);
+					try {
+						const rewritten = rewriteResponseModel(jsonStr, modelName);
+						controller.enqueue(encoder.encode(`data: ${rewritten}\n`));
+					} catch {
+						// If parsing fails, pass the line through unchanged
+						controller.enqueue(encoder.encode(line + "\n"));
+					}
+				} else {
+					controller.enqueue(encoder.encode(line + "\n"));
+				}
+			}
+		},
+		flush(controller) {
+			if (buffer) {
+				// Flush remaining data
+				if (buffer.startsWith("data: ") && !buffer.startsWith("data: [DONE]")) {
+					const jsonStr = buffer.slice(6);
+					try {
+						const rewritten = rewriteResponseModel(jsonStr, modelName);
+						controller.enqueue(encoder.encode(`data: ${rewritten}\n`));
+					} catch {
+						controller.enqueue(encoder.encode(buffer + "\n"));
+					}
+				} else {
+					controller.enqueue(encoder.encode(buffer + "\n"));
+				}
+			}
+		},
+	});
+}
+
 /* ------------------------------------------------------------------ */
 /*  List models   GET /v1/models                                       */
 /* ------------------------------------------------------------------ */
@@ -308,7 +380,23 @@ function createProxyHandler(targetPath: string) {
 				}, 500);
 			}
 
-			return c.newResponse(response.body, response.status as any, responseHeaders);
+			// Rewrite the `model` field in the response body so the client
+			// sees the user-facing model name (alias or providerId/modelName).
+			const contentType = response.headers.get("content-type") ?? "";
+
+			if (contentType.includes("text/event-stream")) {
+				// Streaming SSE response — pipe through a TransformStream
+				// that rewrites `model` in each `data: {...}` line.
+				const transformedStream = response.body!.pipeThrough(
+					createSSEModelRewriteTransform(model),
+				);
+				return c.newResponse(transformedStream, response.status as any, responseHeaders);
+			}
+
+			// Non-streaming response — buffer, rewrite, return as string body
+			const responseText = await response.text();
+			const rewrittenResponse = rewriteResponseModel(responseText, model);
+			return c.newResponse(rewrittenResponse, response.status as any, responseHeaders);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			Logger.error(`Error proxying ${targetPath}:`, message);

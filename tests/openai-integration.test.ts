@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { Hono } from "hono";
-import { resolveModel, rewriteModelField, router as openaiRouter } from "../src/api/versions/v1/routes/openai";
+import { resolveModel, rewriteModelField, rewriteResponseModel, createSSEModelRewriteTransform, router as openaiRouter } from "../src/api/versions/v1/routes/openai";
 import { authMiddlewareV1 } from "../src/api/versions/v1/auth";
 import { ProviderManager } from "../src/loadBalancing/providerManager";
 import { GatewayConfig } from "../src/utils/config/gatewayConfig";
@@ -129,6 +129,112 @@ describe("rewriteModelField", () => {
 		const body = "{model: broken}";
 		const result = rewriteModelField(body, "gpt-4");
 		expect(typeof result).toBe("string");
+	});
+});
+
+/* ------------------------------------------------------------------ */
+/*  rewriteResponseModel unit tests                                   */
+/* ------------------------------------------------------------------ */
+
+describe("rewriteResponseModel", () => {
+	test("should rewrite model field in JSON body to user-facing name", () => {
+		const body = JSON.stringify({ model: "gpt-4", choices: [] });
+		const result = rewriteResponseModel(body, "provider-1/gpt-4");
+		const parsed = JSON.parse(result);
+		expect(parsed.model).toBe("provider-1/gpt-4");
+		expect(parsed.choices).toEqual([]);
+	});
+
+	test("should not change model if already matching", () => {
+		const body = JSON.stringify({ model: "provider-1/gpt-4", choices: [] });
+		const result = rewriteResponseModel(body, "provider-1/gpt-4");
+		const parsed = JSON.parse(result);
+		expect(parsed.model).toBe("provider-1/gpt-4");
+	});
+
+	test("should rewrite model to custom alias", () => {
+		const body = JSON.stringify({ model: "claude-3-opus", choices: [] });
+		const result = rewriteResponseModel(body, "claude-opus");
+		const parsed = JSON.parse(result);
+		expect(parsed.model).toBe("claude-opus");
+	});
+
+	test("should pass through non-JSON body unchanged", () => {
+		const body = "not-json-at-all";
+		const result = rewriteResponseModel(body, "provider-1/gpt-4");
+		expect(result).toBe("not-json-at-all");
+	});
+
+	test("should handle body without model field", () => {
+		const body = JSON.stringify({ object: "list", data: [] });
+		const result = rewriteResponseModel(body, "provider-1/gpt-4");
+		const parsed = JSON.parse(result);
+		expect(parsed.object).toBe("list");
+		expect(parsed.model).toBeUndefined();
+	});
+
+	test("should handle malformed JSON gracefully", () => {
+		const body = "{model: broken}";
+		const result = rewriteResponseModel(body, "provider-1/gpt-4");
+		expect(typeof result).toBe("string");
+	});
+});
+
+/* ------------------------------------------------------------------ */
+/*  createSSEModelRewriteTransform unit tests                          */
+/* ------------------------------------------------------------------ */
+
+describe("createSSEModelRewriteTransform", () => {
+	async function runTransform(
+		input: string,
+		modelName: string,
+	): Promise<string> {
+		const transform = createSSEModelRewriteTransform(modelName);
+		const writer = transform.writable.getWriter();
+		const reader = transform.readable.getReader();
+		const encoder = new TextEncoder();
+		const decoder = new TextDecoder();
+
+		writer.write(encoder.encode(input));
+		writer.close();
+
+		let result = "";
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			result += decoder.decode(value, { stream: true });
+		}
+		return result;
+	}
+
+	test("should rewrite model in SSE data lines", async () => {
+		const input =
+			'data: {"id":"1","object":"chat.completion.chunk","model":"gpt-4","choices":[]}\n' +
+			'data: {"id":"2","object":"chat.completion.chunk","model":"gpt-4","choices":[]}\n' +
+			"data: [DONE]\n";
+
+		const result = await runTransform(input, "provider-1/gpt-4");
+
+		expect(result).toContain('"model":"provider-1/gpt-4"');
+		expect(result).not.toContain('"model":"gpt-4"');
+		expect(result).toContain("data: [DONE]");
+	});
+
+	test("should pass through [DONE] sentinel unchanged", async () => {
+		const input = "data: [DONE]\n";
+		const result = await runTransform(input, "provider-1/gpt-4");
+		expect(result).toBe("data: [DONE]\n");
+	});
+
+	test("should handle empty input", async () => {
+		const result = await runTransform("", "provider-1/gpt-4");
+		expect(result).toBe("");
+	});
+
+	test("should handle non-JSON data lines", async () => {
+		const input = "data: plain text line\n";
+		const result = await runTransform(input, "provider-1/gpt-4");
+		expect(result).toBe("data: plain text line\n");
 	});
 });
 
@@ -267,6 +373,8 @@ describe("v1 API Routes", () => {
 		expect(res.status).toBe(200);
 		const json = (await res.json()) as any;
 		expect(json.object).toBe("chat.completion");
+		// Response model should match what the client sent, not the bare backend name
+		expect(json.model).toBe("provider-1/gpt-4-fake");
 	});
 
 	test("POST /v1/chat/completions should return 400 when model is missing", async () => {
@@ -359,6 +467,7 @@ describe("v1 API Routes", () => {
 		expect(res.status).toBe(200);
 		const json = (await res.json()) as any;
 		expect(json.object).toBe("text_completion");
+		expect(json.model).toBe("provider-1/gpt-4-fake");
 	});
 
 	/* ---- POST /v1/embeddings ---- */
@@ -380,6 +489,7 @@ describe("v1 API Routes", () => {
 		expect(res.status).toBe(200);
 		const json = (await res.json()) as any;
 		expect(json.object).toBe("list");
+		expect(json.model).toBe("provider-1/gpt-4-fake");
 	});
 });
 
@@ -486,6 +596,8 @@ describe("v1 API Routes with custom model mapping", () => {
 		expect(res.status).toBe(200);
 		const json = (await res.json()) as any;
 		expect(json.object).toBe("chat.completion");
+		// With custom mapping, response model should be the alias, not the bare backend name
+		expect(json.model).toBe("claude-opus");
 	});
 });
 
