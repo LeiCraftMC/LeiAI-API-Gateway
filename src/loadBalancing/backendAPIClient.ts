@@ -2,6 +2,7 @@ import { SocksClient } from "socks";
 import { Socket } from "net";
 import * as tls from "tls";
 import { Utils } from "../utils";
+import { Logger } from "../utils/logger";
 
 interface HttpClientOptions {
 	timeout?: number;
@@ -69,8 +70,10 @@ export class BackendAPIClient {
 			headers.delete("Authorization");
 		}
 
+		// log request to backend details
+		Logger.debug(`Sending request to backend: ${options?.method || "GET"} ${url} — headers: ${JSON.stringify(Object.fromEntries(headers.entries()))} — body: ${options?.body ? (typeof options.body === "string" ? options.body : String(options.body)).slice(0, 2000) + (typeof options.body === "string" && options.body.length > 2000 ? "… [truncated]" : "") : "<no body>"}`);
+
 		if (this.settings.proxy) {
-			headers.delete("content-length");
 			return this.requestViaSocks(url, headers, options);
 		}
 

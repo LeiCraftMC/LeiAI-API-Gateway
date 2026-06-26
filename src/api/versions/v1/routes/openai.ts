@@ -300,8 +300,12 @@ function createProxyHandler(targetPath: string) {
 					`Request on model "${model}" → ${resolved.providerId}/${resolved.bareModel}: ` +
 					`backend returned ${response.status}: ${errorBody.slice(0, 500)}`,
 				);
-				try { return c.json(JSON.parse(errorBody), response.status as any); }
-				catch { return c.newResponse(errorBody, response.status as any, responseHeaders); }
+				return c.json({
+					error: {
+						message: `Internal Server Error`,
+						type: "server_error",
+					},
+				}, 500);
 			}
 
 			return c.newResponse(response.body, response.status as any, responseHeaders);
