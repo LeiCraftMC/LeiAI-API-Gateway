@@ -275,10 +275,10 @@ function createProxyHandler(targetPath: string) {
 				}
 			}
 
-			Logger.debug(`Request on model "${model}" resolved to provider "${resolved.providerName}" (bare model: "${resolved.bareModel}") input: ${JSON.stringify(bodyText, null, 2)}`);
-
 			// Rewrite model field to bare name and forward
 			const rewrittenBody = rewriteModelField(bodyText, resolved.bareModel);
+
+			Logger.debug(`Request on model "${model}" → ${resolved.providerId}/${resolved.bareModel} forwarded: ${JSON.stringify(rewrittenBody).slice(0, 2000)}`);
 
 			
 			const rawRequest = c.req.raw as Request;
@@ -293,6 +293,16 @@ function createProxyHandler(targetPath: string) {
 			// Convert Headers to a plain record for c.newResponse
 			const responseHeaders: Record<string, string> = {};
 			response.headers.forEach((value, key) => { responseHeaders[key] = value; });
+
+			if (!response.ok) {
+				const errorBody = await response.text().catch(() => "<unreadable>");
+				Logger.error(
+					`Request on model "${model}" → ${resolved.providerId}/${resolved.bareModel}: ` +
+					`backend returned ${response.status}: ${errorBody.slice(0, 500)}`,
+				);
+				try { return c.json(JSON.parse(errorBody), response.status as any); }
+				catch { return c.newResponse(errorBody, response.status as any, responseHeaders); }
+			}
 
 			return c.newResponse(response.body, response.status as any, responseHeaders);
 		} catch (error) {

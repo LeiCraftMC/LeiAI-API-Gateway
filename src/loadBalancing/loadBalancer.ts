@@ -172,6 +172,10 @@ export class LoadBalancer {
 				forwardHeaders.set(key, value);
 			}
 		});
+		// Content-Length from the original client request is stale after
+		// rewriteModelField changes the body length — strip it so fetch()
+		// (or the SOCKS5 path) recomputes the correct value from the body.
+		forwardHeaders.delete("content-length");
 		return forwardHeaders;
 	}
 }
