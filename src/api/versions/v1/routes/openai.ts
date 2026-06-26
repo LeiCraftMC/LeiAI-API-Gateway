@@ -106,6 +106,32 @@ export function rewriteModelField(body: string, bareModel: string): string {
 	}
 }
 
+/**
+ * For providers with `fixReasoningContent` enabled, inject
+ * `reasoning_content` on assistant messages that have `content`
+ * but are missing `reasoning_content`.
+ *
+ * DeepSeek's thinking mode requires `reasoning_content` to be
+ * echoed back on every assistant message in multi-turn conversations
+ * with tool calls.  Some upstream clients (e.g. Open WebUI) strip
+ * this field when converting between API formats.
+ */
+export function injectReasoningContent(body: string): string {
+	try {
+		const parsed = JSON.parse(body);
+		if (Array.isArray(parsed?.messages)) {
+			for (const msg of parsed.messages) {
+				if (msg.role === "assistant" && typeof msg.content === "string" && msg.content.length > 0 && !msg.reasoning_content) {
+					msg.reasoning_content = msg.content;
+				}
+			}
+		}
+		return JSON.stringify(parsed);
+	} catch {
+		return body;
+	}
+}
+
 /* ------------------------------------------------------------------ */
 /*  List models   GET /v1/models                                       */
 /* ------------------------------------------------------------------ */
@@ -277,8 +303,9 @@ function createProxyHandler(targetPath: string) {
 
 			// Rewrite model field to bare name and forward
 			const rewrittenBody = rewriteModelField(bodyText, resolved.bareModel);
+			const finalBody = provider.fixReasoningContent ? injectReasoningContent(rewrittenBody) : rewrittenBody;
 
-			Logger.debug(`Request on model "${model}" → ${resolved.providerId}/${resolved.bareModel} forwarded: ${JSON.stringify(rewrittenBody).slice(0, 2000)}`);
+			Logger.debug(`Request on model "${model}" → ${resolved.providerId}/${resolved.bareModel} forwarded: ${JSON.stringify(finalBody).slice(0, 2000)}`);
 
 			
 			const rawRequest = c.req.raw as Request;
@@ -287,7 +314,7 @@ function createProxyHandler(targetPath: string) {
 				rawRequest.url.includes("?") ? "?" + rawRequest.url.split("?")[1] : "",
 				rawRequest.method,
 				rawRequest.headers,
-				rewrittenBody,
+				finalBody,
 			);
 
 			// Convert Headers to a plain record for c.newResponse

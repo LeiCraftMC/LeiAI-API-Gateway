@@ -78,17 +78,19 @@ export class ProviderManager {
      * and round-robin LoadBalancer.  Created once in {@link ProviderManager.init}
      * and reused across requests so load-balancing state persists.
      */
-    export class Provider {
-        public readonly id: string;
-        public readonly name: string;
-        public readonly backends: Provider.Backend[];
-        public readonly healthMonitor: HealthMonitor;
-        public readonly models: ProviderModelsIndex;
-        public readonly loadBalancer: LoadBalancer;
+	export class Provider {
+		public readonly id: string;
+		public readonly name: string;
+		public readonly fixReasoningContent: boolean;
+		public readonly backends: Provider.Backend[];
+		public readonly healthMonitor: HealthMonitor;
+		public readonly models: ProviderModelsIndex;
+		public readonly loadBalancer: LoadBalancer;
 
-        constructor(config: GatewayConfig.Types.Provider) {
-            this.id = config.id;
-            this.name = config.name;
+		constructor(config: GatewayConfig.Types.Provider) {
+			this.id = config.id;
+			this.name = config.name;
+			this.fixReasoningContent = config.fixReasoningContent ?? false;
             this.healthMonitor = new HealthMonitor(config.backends);
             this.backends = config.backends.map((backend) => ({
                 name: backend.name,
