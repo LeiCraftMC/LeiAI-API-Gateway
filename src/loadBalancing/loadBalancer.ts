@@ -128,9 +128,10 @@ export class LoadBalancer {
 					`Provider "${this.providerId}" backend "${backend.name}" returned error: ` +
 					`status=${response.status}, body=${errorBody.slice(0, 500)}`,
 				);
+				return this.wrapResponse(response.status, response.statusText, response.headers, backend.name, errorBody);
 			}
 
-			return this.wrapResponse(response, backend.name);
+			return this.wrapResponse(response.status, response.statusText, response.headers, backend.name, response.body);
 		} catch (error) {
 			this.healthMonitor.setHealthyness(backendIndex, false);
 			const message = error instanceof Error ? error.message : String(error);
@@ -148,13 +149,19 @@ export class LoadBalancer {
 
 	// ---- Internals ----------------------------------------------------
 
-	private wrapResponse(response: Response, backendName: string): Response {
-		const headers = new Headers(response.headers);
-		headers.set("X-Load-Balancer-Backend", backendName);
-		return new Response(response.body, {
-			status: response.status,
-			statusText: response.statusText,
-			headers,
+	private wrapResponse(
+		status: number,
+		statusText: string,
+		headers: Headers,
+		backendName: string,
+		body: ReadableStream | string | null,
+	): Response {
+		const newHeaders = new Headers(headers);
+		newHeaders.set("X-Load-Balancer-Backend", backendName);
+		return new Response(body, {
+			status,
+			statusText,
+			headers: newHeaders,
 		});
 	}
 
