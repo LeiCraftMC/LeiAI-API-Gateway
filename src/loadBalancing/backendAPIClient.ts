@@ -69,8 +69,6 @@ export class BackendAPIClient {
 			headers.delete("Authorization");
 		}
 
-		headers.set("User-Agent", "AI-Gateway/1.0");
-
 		if (this.settings.proxy) {
 			headers.delete("content-length");
 			return this.requestViaSocks(url, headers, options);
