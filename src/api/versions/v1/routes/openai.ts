@@ -3,6 +3,7 @@ import { ProviderManager } from "../../../../loadBalancing/providerManager";
 import { Logger } from "../../../../utils/logger";
 import { GatewayConfig } from "../../../../utils/config/gatewayConfig";
 import type { AuthContext } from "../auth";
+import type { ReadableStreamReadResult } from "stream/web";
 
 export const router = new Hono();
 
@@ -388,12 +389,41 @@ function createProxyHandler(targetPath: string) {
 				const transformedStream = response.body!.pipeThrough(
 					createSSEModelRewriteTransform(model),
 				);
+
+				// wait for the stream to finished in the background for logging it after the stream finishes, but don't block the response
+				if (Logger.getLogLevel() === "debug") {
+					(async () => {
+						const reader = transformedStream.getReader();
+						let result: ReadableStreamReadResult<Uint8Array>;
+						let fullResponse = "";
+
+						while (!(result = await reader.read()).done) {
+							const chunk = result.value;
+							fullResponse += new TextDecoder().decode(chunk);
+						}
+
+						Logger.debug(
+							`Streaming Response from ${resolved.providerId}/${resolved.bareModel} → model "${model}":` +
+							`Body: ${fullResponse}`
+						);
+
+					})().catch((err) => {
+						Logger.error("Error reading transformed SSE stream:", err);
+					}
+				);
+
 				return c.newResponse(transformedStream, response.status as any, responseHeaders);
 			}
 
 			// Non-streaming response — buffer, rewrite, return as string body
 			const responseText = await response.text();
 			const rewrittenResponse = rewriteResponseModel(responseText, model);
+
+			Logger.debug(
+				`Non-Streaming Response from ${resolved.providerId}/${resolved.bareModel} → model "${model}":` +
+				`Body: ${JSON.stringify(rewrittenResponse, null, 2)}`
+			);
+
 			return c.newResponse(rewrittenResponse, response.status as any, responseHeaders);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
