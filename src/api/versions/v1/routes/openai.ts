@@ -390,7 +390,7 @@ function createProxyHandler(targetPath: string) {
 					createSSEModelRewriteTransform(model),
 				);
 
-				// wait for the stream to finished in the background for logging it after the stream finishes, but don't block the response
+				// stream for logging, but don't block the response
 				if (Logger.getLogLevel() === "debug") {
 
 					const [clientStream, logStream] = returnStream.tee();
@@ -398,23 +398,16 @@ function createProxyHandler(targetPath: string) {
 					// Use clientStream for Hono
 					returnStream = clientStream;
 
-					(async () => {
-						const reader = logStream.getReader();
-						let result: ReadableStreamReadResult<Uint8Array>;
-						let fullResponse = "";
-
-						while (!(result = await reader.read()).done) {
-							const chunk = result.value;
-							fullResponse += new TextDecoder().decode(chunk);
-						}
-
+					// Use logStream for logging
+					const reader = logStream.getReader();
+					reader.read().then(function logChunk(chunk: ReadableStreamReadResult<Uint8Array>) {
+						if (chunk.done) return;
+						const text = new TextDecoder().decode(chunk.value);
 						Logger.debug(
 							`Streaming Response from ${resolved.providerId}/${resolved.bareModel} → model "${model}":` +
-							`Trimmed Body: ${fullResponse.trim().slice(0, 500)}`
+							`Trimmed Chunk: ${text.trim().slice(0, 500)}`
 						);
-
-					})().catch((err) => {
-						Logger.error("Error reading transformed SSE stream:", err);
+						reader.read().then(logChunk);
 					});
 				}
 
