@@ -353,7 +353,7 @@ function createProxyHandler(targetPath: string) {
 
 			Logger.debug(
 				`Request on model "${model}" → ${resolved.providerId}/${resolved.bareModel}:` +
-				`Trimmed Body: ${rewrittenBody.trim().slice(0, 500)}`
+				`Truncated Body: ${rewrittenBody.slice(0, 2000)}`
 			);
 
 			
@@ -390,33 +390,33 @@ function createProxyHandler(targetPath: string) {
 					createSSEModelRewriteTransform(model),
 				);
 
-				// // wait for the stream to finished in the background for logging it after the stream finishes, but don't block the response
-				// if (Logger.getLogLevel() === "debug") {
+				// wait for the stream to finished in the background for logging it after the stream finishes, but don't block the response
+				if (Logger.getLogLevel() === "debug") {
 
-				// 	const [clientStream, logStream] = returnStream.tee();
+					const [clientStream, logStream] = returnStream.tee();
         
-				// 	// Use clientStream for Hono
-				// 	returnStream = clientStream;
+					// Use clientStream for Hono
+					returnStream = clientStream;
 
-				// 	(async () => {
-				// 		const reader = logStream.getReader();
-				// 		let result: ReadableStreamReadResult<Uint8Array>;
-				// 		let fullResponse = "";
+					(async () => {
+						const reader = logStream.getReader();
+						let result: ReadableStreamReadResult<Uint8Array>;
+						let fullResponse = "";
 
-				// 		while (!(result = await reader.read()).done) {
-				// 			const chunk = result.value;
-				// 			fullResponse += new TextDecoder().decode(chunk);
-				// 		}
+						while (!(result = await reader.read()).done) {
+							const chunk = result.value;
+							fullResponse += new TextDecoder().decode(chunk);
+						}
 
-				// 		Logger.debug(
-				// 			`Streaming Response from ${resolved.providerId}/${resolved.bareModel} → model "${model}":` +
-				// 			`Trimmed Body: ${fullResponse.trim().slice(0, 500)}`
-				// 		);
+						Logger.debug(
+							`Streaming Response from ${resolved.providerId}/${resolved.bareModel} → model "${model}":` +
+							`Truncated Body: ${fullResponse.slice(0, 2000)}`
+						);
 
-				// 	})().catch((err) => {
-				// 		Logger.error("Error reading transformed SSE stream:", err);
-				// 	});
-				// }
+					})().catch((err) => {
+						Logger.error("Error reading transformed SSE stream:", err);
+					});
+				}
 
 				return c.newResponse(returnStream, response.status as any, responseHeaders);
 			}
@@ -427,7 +427,7 @@ function createProxyHandler(targetPath: string) {
 
 			Logger.debug(
 				`Non-Streaming Response from ${resolved.providerId}/${resolved.bareModel} → model "${model}":` +
-				`Trimmed Body: ${rewrittenResponse.trim().slice(0, 500)}`
+				`Truncated Body: ${rewrittenResponse.slice(0, 2000)}`
 			);
 
 			return c.newResponse(rewrittenResponse, response.status as any, responseHeaders);
