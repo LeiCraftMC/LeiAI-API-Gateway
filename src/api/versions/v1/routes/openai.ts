@@ -386,14 +386,20 @@ function createProxyHandler(targetPath: string) {
 			if (JSON.parse(bodyText).stream || responseHeaders["content-type"]?.startsWith("text/event-stream")) {
 				// Streaming SSE response —  pipe through a TransformStream
 				// that rewrites `model` in each `data: {...}` line.
-				const transformedStream = response.body!.pipeThrough(
+				let returnStream = response.body!.pipeThrough(
 					createSSEModelRewriteTransform(model),
 				);
 
 				// wait for the stream to finished in the background for logging it after the stream finishes, but don't block the response
 				if (Logger.getLogLevel() === "debug") {
+
+					const [clientStream, logStream] = returnStream.tee();
+        
+					// Use clientStream for Hono
+					returnStream = clientStream;
+
 					(async () => {
-						const reader = transformedStream.getReader();
+						const reader = logStream.getReader();
 						let result: ReadableStreamReadResult<Uint8Array>;
 						let fullResponse = "";
 
@@ -412,7 +418,7 @@ function createProxyHandler(targetPath: string) {
 					});
 				}
 
-				return c.newResponse(transformedStream, response.status as any, responseHeaders);
+				return c.newResponse(returnStream, response.status as any, responseHeaders);
 			}
 
 			// Non-streaming response — buffer, rewrite, return as string body
