@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { GatewayConfig } from "../src/utils/config/gatewayConfig";
 import { HealthMonitor } from "../src/loadBalancing/healthMonitor";
-import { LoadBalancer, type LoadBalancerBackend } from "../src/loadBalancing/loadBalancer";
+import { LoadBalancer } from "../src/loadBalancing/loadBalancer";
 import { BackendAPIClient } from "../src/loadBalancing/backendAPIClient";
 
 describe("GatewayConfig Types — ProviderBackend schema", () => {
@@ -148,11 +148,11 @@ describe("LoadBalancer — getNextBackendIndex", () => {
 			baseUrl: `http://b${i}.com`,
 		}));
 		const monitor = new HealthMonitor(configs);
-		const backends: LoadBalancerBackend[] = configs.map((c) => ({
+		const backends: LoadBalancer.Backend[] = configs.map((c) => ({
 			name: c.name,
 			apiClient: new BackendAPIClient(c),
 		}));
-		return new LoadBalancer("test", "/", backends, monitor);
+		return new LoadBalancer("test", backends, monitor);
 	}
 
 	test("should cycle through backends round-robin", () => {
@@ -186,11 +186,11 @@ describe("LoadBalancer — getNextBackendIndex", () => {
 			{ name: "healthy2", baseUrl: "http://h2.com" },
 		];
 		const monitor = new HealthMonitor(configs);
-		const backends: LoadBalancerBackend[] = configs.map((c) => ({
+		const backends: LoadBalancer.Backend[] = configs.map((c) => ({
 			name: c.name,
 			apiClient: new BackendAPIClient(c),
 		}));
-		const lb = new LoadBalancer("test", "/", backends, monitor);
+		const lb = new LoadBalancer("test", backends, monitor);
 
 		monitor.setHealthyness(1, false);
 

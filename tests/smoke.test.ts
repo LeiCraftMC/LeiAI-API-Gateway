@@ -41,7 +41,6 @@ describe("Smoke Tests", () => {
 			]);
 			const lb = new LoadBalancer(
 				"provider-1",
-				"/",
 				[
 					{
 						name: "test",

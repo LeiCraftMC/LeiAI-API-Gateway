@@ -350,42 +350,40 @@ function createProxyHandler(targetPath: string) {
 			// Rewrite model field to bare name and forward
 			const rewrittenBody = rewriteModelField(bodyText, resolved.bareModel);
 
-			Logger.debug(`Request on model "${model}" → ${resolved.providerId}/${resolved.bareModel} forwarded: ${JSON.stringify(rewrittenBody).slice(0, 2000)}`);
+			Logger.debug(
+				`Request on model "${model}" → ${resolved.providerId}/${resolved.bareModel}:` +
+				`Body: ${JSON.stringify(rewrittenBody, null, 2)}`
+			);
 
 			
 			const rawRequest = c.req.raw as Request;
-			const response = await provider.forwardRequest(
+			const result = await provider.loadBalancer.forwardRequest(
 				targetPath,
-				rawRequest.url.includes("?") ? "?" + rawRequest.url.split("?")[1] : "",
 				rawRequest.method,
-				rawRequest.headers,
+				{
+					"content-type": rawRequest.headers.get("content-type") ?? "application/json",
+				},
 				rewrittenBody,
 			);
 
-			// Convert Headers to a plain record for c.newResponse
-			const responseHeaders: Record<string, string> = {};
-			response.headers.forEach((value, key) => { responseHeaders[key] = value; });
-
-			if (!response.ok) {
-				const errorBody = await response.text().catch(() => "<unreadable>");
-				Logger.error(
-					`Request on model "${model}" → ${resolved.providerId}/${resolved.bareModel}: ` +
-					`backend returned ${response.status}: ${errorBody.slice(0, 500)}`,
-				);
+			const response = result.response;
+			const error = result.error;
+			if (error || !response) {
 				return c.json({
 					error: {
-						message: `Internal Server Error`,
+						message: "Internal Server Error",
 						type: "server_error",
 					},
 				}, 500);
 			}
 
-			// Rewrite the `model` field in the response body so the client
-			// sees the user-facing model name (alias or providerId/modelName).
-			const contentType = response.headers.get("content-type") ?? "";
+			const responseHeaders: Record<string, string> = {};
+			response.headers.forEach((value, key) => {
+				responseHeaders[key] = value;
+			});
 
-			if (contentType.includes("text/event-stream")) {
-				// Streaming SSE response — pipe through a TransformStream
+			if (JSON.parse(bodyText).stream || responseHeaders["content-type"]?.startsWith("text/event-stream")) {
+				// Streaming SSE response —  pipe through a TransformStream
 				// that rewrites `model` in each `data: {...}` line.
 				const transformedStream = response.body!.pipeThrough(
 					createSSEModelRewriteTransform(model),

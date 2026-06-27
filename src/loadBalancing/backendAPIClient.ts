@@ -3,6 +3,7 @@ import { Socket } from "net";
 import * as tls from "tls";
 import { Utils } from "../utils";
 import { Logger } from "../utils/logger";
+import { LoadBalancingUtils } from "./utils";
 
 interface HttpClientOptions {
 	timeout?: number;
@@ -71,7 +72,10 @@ export class BackendAPIClient {
 		}
 
 		// log request to backend details
-		Logger.debug(`Sending request to backend: ${options?.method || "GET"} ${url} — headers: ${JSON.stringify(Object.fromEntries(headers.entries()))} — body: ${options?.body ? (typeof options.body === "string" ? options.body : String(options.body)).slice(0, 2000) + (typeof options.body === "string" && options.body.length > 2000 ? "… [truncated]" : "") : "<no body>"}`);
+		Logger.debug(
+			`Sending request to backend: ${options?.method || "GET"} ${url}\n` + 
+			`Body: ${options?.body ? (typeof options.body === "string" ? options.body : String(options.body)).slice(0, 2000) + (typeof options.body === "string" && options.body.length > 2000 ? "… [truncated]" : "") : "<no body>"}`
+		);
 
 		if (this.settings.proxy) {
 			return this.requestViaSocks(url, headers, options);
@@ -96,14 +100,10 @@ export class BackendAPIClient {
 				signal: controller.signal,
 			});
 
-			const sanitizedHeaders = new Headers(response.headers);
-			sanitizedHeaders.delete("content-encoding");
-			sanitizedHeaders.delete("content-length");
-
 			return new Response(response.body, {
 				status: response.status,
 				statusText: response.statusText,
-				headers: sanitizedHeaders,
+				headers: LoadBalancingUtils.getCleanProxyResponseHeaders(response.headers),
 			});
 		} finally {
 			clearTimeout(timeoutId);
@@ -234,14 +234,10 @@ export class BackendAPIClient {
 							},
 						});
 
-						const sanitizedHeaders = new Headers(responseHeaders);
-						sanitizedHeaders.delete("content-encoding");
-						sanitizedHeaders.delete("content-length");
-
 						resolve(
 							new Response(bodyStream, {
 								status: statusCode,
-								headers: sanitizedHeaders,
+								headers: LoadBalancingUtils.getCleanProxyResponseHeaders(responseHeaders),
 							})
 						);
 					}
@@ -355,14 +351,10 @@ export class BackendAPIClient {
 									},
 								});
 
-								const sanitizedHeaders = new Headers(responseHeaders);
-								sanitizedHeaders.delete("content-encoding");
-								sanitizedHeaders.delete("content-length");
-
 								resolve(
 									new Response(bodyStream, {
 										status: statusCode,
-										headers: sanitizedHeaders,
+										headers: LoadBalancingUtils.getCleanProxyResponseHeaders(responseHeaders),
 									})
 								);
 							}

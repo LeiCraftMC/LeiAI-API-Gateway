@@ -101,21 +101,11 @@ export class ProviderManager {
             this.models = new ProviderModelsIndex();
             this.loadBalancer = new LoadBalancer(
                 this.id,
-                "/",
                 this.backends.map((b) => ({ name: b.name, apiClient: b.apiClient })),
                 this.healthMonitor,
             );
         }
 
-        async forwardRequest(
-            pathname: string,
-            searchParams: string,
-            method: string,
-            headers: Headers,
-            body?: string,
-        ): Promise<Response> {
-            return this.loadBalancer.forwardRequest(pathname, searchParams, method, headers, body);
-        }
     }
 
 export namespace Provider {
