@@ -214,8 +214,28 @@ export class BackendAPIClient {
 						const bodyStart = headerEndIdx + 4;
 						const bodyData = data.substring(bodyStart);
 
-						const bodyStream = new ReadableStream({
+						let bodyStream: ReadableStream<Uint8Array> = new ReadableStream({
 							start(controller) {
+								let closed = false;
+								const close = () => {
+									if (closed) return;
+									closed = true;
+									try {
+										controller.close();
+									} catch {
+										// Already closed by the consumer or a pipe; safe to ignore
+									}
+								};
+								const error = (err: Error) => {
+									if (closed) return;
+									closed = true;
+									try {
+										controller.error(err);
+									} catch {
+										// Already closed; drop the error
+									}
+								};
+
 								if (bodyData.length > 0) {
 									controller.enqueue(Buffer.from(bodyData));
 								}
@@ -224,15 +244,16 @@ export class BackendAPIClient {
 									controller.enqueue(newChunk);
 								});
 
-								socket.on("end", () => {
-									controller.close();
-								});
+								socket.on("end", close);
 
-								socket.on("error", (error: Error) => {
-									controller.error(error);
-								});
+								socket.on("error", error);
 							},
 						});
+
+						const transferEncoding = responseHeaders.get("transfer-encoding");
+						if (transferEncoding?.toLowerCase().includes("chunked")) {
+							bodyStream = bodyStream.pipeThrough(this.createChunkedDecodeStream());
+						}
 
 						resolve(
 							new Response(bodyStream, {
@@ -331,8 +352,28 @@ export class BackendAPIClient {
 								const bodyStart = headerEndIdx + 4;
 								const bodyData = data.substring(bodyStart, data.length);
 
-								const bodyStream = new ReadableStream({
+								let bodyStream: ReadableStream<Uint8Array> = new ReadableStream({
 									start(controller) {
+										let closed = false;
+										const close = () => {
+											if (closed) return;
+											closed = true;
+											try {
+												controller.close();
+											} catch {
+												// Already closed by the consumer or a pipe; safe to ignore
+											}
+										};
+										const error = (err: Error) => {
+											if (closed) return;
+											closed = true;
+											try {
+												controller.error(err);
+											} catch {
+												// Already closed; drop the error
+											}
+										};
+
 										if (bodyData.length > 0) {
 											controller.enqueue(Buffer.from(bodyData, "binary"));
 										}
@@ -341,15 +382,16 @@ export class BackendAPIClient {
 											controller.enqueue(newChunk);
 										});
 
-										tlsSocket.on("end", () => {
-											controller.close();
-										});
+										tlsSocket.on("end", close);
 
-										tlsSocket.on("error", (error: Error) => {
-											controller.error(error);
-										});
+										tlsSocket.on("error", error);
 									},
 								});
+
+								const transferEncoding = responseHeaders.get("transfer-encoding");
+								if (transferEncoding?.toLowerCase().includes("chunked")) {
+									bodyStream = bodyStream.pipeThrough(this.createChunkedDecodeStream());
+								}
 
 								resolve(
 									new Response(bodyStream, {
@@ -370,6 +412,126 @@ export class BackendAPIClient {
 			tlsSocket.on("error", (error: Error) => {
 				reject(error);
 			});
+		});
+	}
+
+	/**
+	 * Create a TransformStream that decodes an HTTP/1.1 chunked-transfer
+	 * encoded body into plain bytes.
+	 *
+	 * The chunked format is:
+	 *   <hex-size>[;ext]*\r\n
+	 *   <size bytes>\r\n
+	 *   ...
+	 *   0[;ext]*\r\n
+	 *   <trailers>\r\n
+	 *   \r\n
+	 */
+	private createChunkedDecodeStream(): TransformStream<Uint8Array, Uint8Array> {
+		const decoder = new TextDecoder();
+		const encoder = new TextEncoder();
+		let buffer: Uint8Array = new Uint8Array(0);
+		let state: "size" | "body" = "size";
+		let remainingBody = 0;
+		let trailersSeen = false;
+
+		const concat = (a: Uint8Array, b: Uint8Array): Uint8Array => {
+			const result = new Uint8Array(a.length + b.length);
+			result.set(a);
+			result.set(b, a.length);
+			return result;
+		};
+
+		const findCRLF = (data: Uint8Array, start = 0): number => {
+			for (let i = start; i < data.length - 1; i++) {
+				if (data[i] === 0x0d && data[i + 1] === 0x0a) {
+					return i;
+				}
+			}
+			return -1;
+		};
+
+		return new TransformStream({
+			transform(chunk: Uint8Array, controller) {
+				buffer = concat(buffer, chunk);
+
+				while (true) {
+					if (state === "size") {
+						const crlfIdx = findCRLF(buffer);
+						if (crlfIdx === -1) {
+							// Need more data to read the chunk-size line
+							// If the buffer is huge without CRLF, prevent unbounded growth by waiting
+							return;
+						}
+
+						const sizeLine = decoder.decode(buffer.subarray(0, crlfIdx));
+						const sizeHex = (sizeLine.split(";")[0] ?? "").trim();
+						const size = parseInt(sizeHex, 16);
+
+						if (Number.isNaN(size)) {
+							controller.error(new Error(`Invalid chunked encoding size: "${sizeHex}"`));
+							return;
+						}
+
+						// Remove the size line (including CRLF) from the buffer
+						buffer = buffer.slice(crlfIdx + 2);
+
+						if (size === 0) {
+							// Last-chunk.  We use Connection: close, so trailers are not
+							// meaningful; skip everything until the final CRLF.
+							state = "body";
+							remainingBody = 0;
+							trailersSeen = true;
+							// Fall through to the body state to consume the trailing CRLF below
+						} else {
+							state = "body";
+							remainingBody = size;
+						}
+					}
+
+					if (state === "body") {
+						if (trailersSeen) {
+							// We are after the last-chunk; wait for a single CRLF to end
+							const crlfIdx = findCRLF(buffer);
+							if (crlfIdx !== -1) {
+								buffer = buffer.slice(crlfIdx + 2);
+								controller.terminate();
+							}
+							return;
+						}
+
+						const emitLen = Math.min(remainingBody, buffer.length);
+						if (emitLen > 0) {
+							controller.enqueue(buffer.slice(0, emitLen));
+							buffer = buffer.slice(emitLen);
+							remainingBody -= emitLen;
+						}
+
+						if (remainingBody === 0) {
+							// Body emitted; now consume the trailing CRLF
+							const crlfIdx = findCRLF(buffer);
+							if (crlfIdx === -1) {
+								// Wait for the CRLF to arrive
+								state = "size";
+								return;
+							}
+							buffer = buffer.slice(crlfIdx + 2);
+							state = "size";
+						} else {
+							// Need more body bytes
+							return;
+						}
+					}
+				}
+			},
+			flush(controller) {
+				if (buffer.length > 0) {
+					// If we buffered trailing bytes, flush them as a best-effort
+					// (e.g. when the upstream closes immediately after the last chunk)
+					controller.enqueue(buffer);
+				}
+				controller.terminate();
+			},
 		});
 	}
 }

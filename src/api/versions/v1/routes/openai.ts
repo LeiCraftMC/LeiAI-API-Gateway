@@ -128,6 +128,9 @@ export function rewriteResponseModel(body: string, modelName: string): string {
  * Create a TransformStream that rewrites the `model` field in SSE
  * `data: {...}` lines to the user-facing model name.
  *
+ * SSE streams may use CRLF (`\r\n`) line endings, so we split on `\n`
+ * and strip a trailing `\r` from each line before parsing the JSON payload.
+ *
  * Lines that are not `data: {...}` JSON (e.g. `data: [DONE]`) pass
  * through unchanged.
  */
@@ -138,6 +141,19 @@ export function createSSEModelRewriteTransform(
 	const encoder = new TextEncoder();
 	let buffer = "";
 
+	const processLine = (line: string): string => {
+		if (line.startsWith("data: ") && !line.startsWith("data: [DONE]")) {
+			const jsonStr = line.slice(6);
+			try {
+				const rewritten = rewriteResponseModel(jsonStr, modelName);
+				return `data: ${rewritten}`;
+			} catch {
+				return line;
+			}
+		}
+		return line;
+	};
+
 	return new TransformStream({
 		transform(chunk: Uint8Array, controller) {
 			buffer += decoder.decode(chunk, { stream: true });
@@ -146,34 +162,17 @@ export function createSSEModelRewriteTransform(
 			buffer = lines.pop() ?? "";
 
 			for (const line of lines) {
-				if (line.startsWith("data: ") && !line.startsWith("data: [DONE]")) {
-					const jsonStr = line.slice(6);
-					try {
-						const rewritten = rewriteResponseModel(jsonStr, modelName);
-						controller.enqueue(encoder.encode(`data: ${rewritten}\n`));
-					} catch {
-						// If parsing fails, pass the line through unchanged
-						controller.enqueue(encoder.encode(line + "\n"));
-					}
-				} else {
-					controller.enqueue(encoder.encode(line + "\n"));
-				}
+				// SSE lines often end with \r\n; strip the trailing \r
+				const cleanLine = line.endsWith("\r") ? line.slice(0, -1) : line;
+				const output = processLine(cleanLine);
+				controller.enqueue(encoder.encode(output + "\n"));
 			}
 		},
 		flush(controller) {
 			if (buffer) {
-				// Flush remaining data
-				if (buffer.startsWith("data: ") && !buffer.startsWith("data: [DONE]")) {
-					const jsonStr = buffer.slice(6);
-					try {
-						const rewritten = rewriteResponseModel(jsonStr, modelName);
-						controller.enqueue(encoder.encode(`data: ${rewritten}\n`));
-					} catch {
-						controller.enqueue(encoder.encode(buffer + "\n"));
-					}
-				} else {
-					controller.enqueue(encoder.encode(buffer + "\n"));
-				}
+				const cleanLine = buffer.endsWith("\r") ? buffer.slice(0, -1) : buffer;
+				const output = processLine(cleanLine);
+				controller.enqueue(encoder.encode(output + "\n"));
 			}
 		},
 	});
