@@ -427,7 +427,7 @@ function createProxyHandler(targetPath: string) {
 			return c.newResponse(rewrittenResponse, response.status as any, responseHeaders);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
-			Logger.error(`Error proxying ${targetPath}:`, message);
+			Logger.error(`Error proxying ${targetPath}:`, message, (error as Error).stack ? (error as Error).stack : "<no stack trace>");
 			return c.json({
 				error: { message: "Internal Server Error", type: "server_error" },
 			}, 500);
