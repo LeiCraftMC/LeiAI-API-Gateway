@@ -116,7 +116,7 @@ export class LoadBalancer {
 
 			const message = error instanceof Error ? error.message : String(error);
 			Logger.error(
-				`Provider "${this.providerId}" backend "${backend.name}" request failed: ${message}`,
+				`Provider "${this.providerId}" backend "${backend.name}" request failed: ${message}, Stack: ${error instanceof Error ? error.stack : "<no stack>"}`
 			);
 			return {
 				response: null,

@@ -353,7 +353,7 @@ function createProxyHandler(targetPath: string) {
 
 			Logger.debug(
 				`Request on model "${model}" → ${resolved.providerId}/${resolved.bareModel}:` +
-				`Body: ${JSON.stringify(rewrittenBody, null, 2)}`
+				`Trimmed Body: ${rewrittenBody.trim().slice(0, 500)}`
 			);
 
 			
@@ -410,7 +410,7 @@ function createProxyHandler(targetPath: string) {
 
 						Logger.debug(
 							`Streaming Response from ${resolved.providerId}/${resolved.bareModel} → model "${model}":` +
-							`Body: ${fullResponse}`
+							`Trimmed Body: ${fullResponse.trim().slice(0, 500)}`
 						);
 
 					})().catch((err) => {
@@ -427,7 +427,7 @@ function createProxyHandler(targetPath: string) {
 
 			Logger.debug(
 				`Non-Streaming Response from ${resolved.providerId}/${resolved.bareModel} → model "${model}":` +
-				`Body: ${JSON.stringify(rewrittenResponse, null, 2)}`
+				`Trimmed Body: ${rewrittenResponse.trim().slice(0, 500)}`
 			);
 
 			return c.newResponse(rewrittenResponse, response.status as any, responseHeaders);
