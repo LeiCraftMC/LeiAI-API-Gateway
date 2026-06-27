@@ -394,21 +394,38 @@ function createProxyHandler(targetPath: string) {
 				if (Logger.getLogLevel() === "debug") {
 
 					const [clientStream, logStream] = returnStream.tee();
-        
-					// Use clientStream for Hono
+
+					// 1. Return the client stream to the caller
 					returnStream = clientStream;
 
-					// Use logStream for logging
-					const reader = logStream.getReader();
-					reader.read().then(function logChunk(chunk: ReadableStreamReadResult<Uint8Array>) {
-						if (chunk.done) return;
-						const text = new TextDecoder().decode(chunk.value);
-						Logger.debug(
-							`Streaming Response from ${resolved.providerId}/${resolved.bareModel} → model "${model}":` +
-							`Trimmed Chunk: ${text.trim().slice(0, 500)}`
-						);
-						reader.read().then(logChunk);
-					});
+					// 2. Read the log stream asynchronously with explicit error handling
+					(async () => {
+						const reader = logStream.getReader();
+						const decoder = new TextDecoder();
+
+						try {
+							while (true) {
+								const { done, value } = await reader.read();
+								if (done) break;
+
+								const text = decoder.decode(value);
+								Logger.debug(
+									`Streaming Response from ${resolved.providerId}/${resolved.bareModel} → model "${model}": ` +
+									`Trimmed Chunk: ${text.trim().slice(0, 500)}`
+								);
+							}
+						} catch (err: any) {
+							// 3. Catch the Bun AbortError gracefully when the client disconnects
+							if (err.name === 'AbortError' || err.code === 'ABORT_ERR') {
+								Logger.debug("Logging stream aborted because the client disconnected.");
+							} else {
+								Logger.error("Error reading log stream:", err);
+							}
+						} finally {
+							// 4. Ensure the stream lock is released
+							reader.releaseLock();
+						}
+					})(); // IIFE keeps this completely out of the main execution path
 				}
 
 				return c.newResponse(returnStream, response.status as any, responseHeaders);
