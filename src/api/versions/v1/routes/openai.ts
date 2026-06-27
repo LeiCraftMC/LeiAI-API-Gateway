@@ -409,8 +409,8 @@ function createProxyHandler(targetPath: string) {
 
 					})().catch((err) => {
 						Logger.error("Error reading transformed SSE stream:", err);
-					}
-				);
+					});
+				}
 
 				return c.newResponse(transformedStream, response.status as any, responseHeaders);
 			}
