@@ -89,15 +89,15 @@ export class BackendAPIClient {
 		headers: Headers,
 		options?: RequestInit & HttpClientOptions
 	): Promise<Response> {
-		const controller = new AbortController();
-		const timeout = options?.timeout || 30000;
-		const timeoutId = setTimeout(() => controller.abort(), timeout);
+		// const controller = new AbortController();
+		// const timeout = options?.timeout || 30000;
+		// const timeoutId = setTimeout(() => controller.abort(), timeout);
 
 		try {
 			const response = await fetch(url, {
 				...options,
 				headers,
-				signal: controller.signal,
+				// signal: controller.signal,
 			});
 
 			return new Response(response.body, {
@@ -106,7 +106,7 @@ export class BackendAPIClient {
 				headers: LoadBalancingUtils.getCleanProxyResponseHeaders(response.headers),
 			});
 		} finally {
-			clearTimeout(timeoutId);
+			// clearTimeout(timeoutId);
 		}
 	}
 
