@@ -223,7 +223,7 @@ describe("createSSEModelRewriteTransform", () => {
 	test("should pass through [DONE] sentinel unchanged", async () => {
 		const input = "data: [DONE]\n";
 		const result = await runTransform(input, "provider-1/gpt-4");
-		expect(result).toBe("data: [DONE]\n\n");
+		expect(result).toBe("data: [DONE]\n");
 	});
 
 	test("should handle empty input", async () => {
@@ -234,7 +234,7 @@ describe("createSSEModelRewriteTransform", () => {
 	test("should handle non-JSON data lines", async () => {
 		const input = "data: plain text line\n";
 		const result = await runTransform(input, "provider-1/gpt-4");
-		expect(result).toBe("data: plain text line\n\n");
+		expect(result).toBe("data: plain text line\n");
 	});
 });
 

@@ -157,14 +157,9 @@ export function createSSEModelRewriteTransform(
 	return new TransformStream({
 		transform(chunk: Uint8Array, controller) {
 			buffer += decoder.decode(chunk, { stream: true });
-
-			// If the buffer ends with \n, the last split element is a real
-			// terminator line (the blank line between SSE events).  Only keep
-			// the last element as a fragment if the chunk did not end on a
-			// newline boundary.
-			const endsWithNewline = buffer.endsWith("\n");
 			const lines = buffer.split("\n");
-			buffer = endsWithNewline ? "" : (lines.pop() ?? "");
+			// Keep the last (possibly incomplete) line in the buffer
+			buffer = lines.pop() ?? "";
 
 			for (const line of lines) {
 				// SSE lines often end with \r\n; strip the trailing \r
