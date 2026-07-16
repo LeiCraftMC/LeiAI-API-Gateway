@@ -143,7 +143,15 @@ export function createSSEModelRewriteTransform(
 	let buffer = "";
 	let doneSeen = false;
 
-	const processLine = (line: string): string => {
+	const INFERENCE_COST_PREFIX =
+		'data: {"choices":[],"x-opencode-type":"inference-cost"';
+
+	const processLine = (line: string): string | null => {
+		// Drop OpenCode inference-cost SSE frames that carry no content.
+		if (line.startsWith(INFERENCE_COST_PREFIX)) {
+			return null;
+		}
+
 		if (line.startsWith("data: ") && !line.startsWith("data: [DONE]")) {
 			const jsonStr = line.slice(6);
 			try {
@@ -173,6 +181,7 @@ export function createSSEModelRewriteTransform(
 				// SSE lines often end with \r\n; strip the trailing \r
 				const cleanLine = line.endsWith("\r") ? line.slice(0, -1) : line;
 				const output = processLine(cleanLine);
+				if (output === null) continue;
 				controller.enqueue(encoder.encode(output + "\n"));
 
 				if (cleanLine.startsWith("data: [DONE]")) {
@@ -193,6 +202,7 @@ export function createSSEModelRewriteTransform(
 			if (buffer) {
 				const cleanLine = buffer.endsWith("\r") ? buffer.slice(0, -1) : buffer;
 				const output = processLine(cleanLine);
+				if (output === null) return;
 				controller.enqueue(encoder.encode(output + "\n"));
 			}
 		},
