@@ -4,6 +4,7 @@ import { Logger } from "../../../../utils/logger";
 import { GatewayConfig } from "../../../../utils/config/gatewayConfig";
 import type { AuthContext } from "../auth";
 import type { ReadableStreamReadResult } from "stream/web";
+import { ConfigHandler } from "../../../../utils/config";
 
 export const router = new Hono();
 
@@ -407,10 +408,17 @@ function createProxyHandler(targetPath: string) {
 							fullResponse += new TextDecoder().decode(chunk);
 						}
 
-						Logger.debug(
-							`Streaming Response from ${resolved.providerId}/${resolved.bareModel} → model "${model}":` +
-							`Truncated Body: ${fullResponse.slice(0, 2000)}`
-						);
+						if (ConfigHandler.getConfig()?.LAG_LOG_DEBUG_FULL_RESPONSE) {
+							Logger.debug(
+								`Full Streaming Response from ${resolved.providerId}/${resolved.bareModel} → model "${model}":` +
+								`Body: ${fullResponse}`
+							);
+						} else {
+							Logger.debug(
+								`Streaming Response from ${resolved.providerId}/${resolved.bareModel} → model "${model}":` +
+								`Truncated Body: ${fullResponse.slice(0, 2000)}`
+							);
+						}
 
 					})().catch((err) => {
 						Logger.error("Error reading transformed SSE stream:", err);
@@ -424,10 +432,17 @@ function createProxyHandler(targetPath: string) {
 			const responseText = await response.text();
 			const rewrittenResponse = rewriteResponseModel(responseText, model);
 
-			Logger.debug(
-				`Non-Streaming Response from ${resolved.providerId}/${resolved.bareModel} → model "${model}":` +
-				`Truncated Body: ${rewrittenResponse.slice(0, 2000)}`
-			);
+			if (ConfigHandler.getConfig()?.LAG_LOG_DEBUG_FULL_RESPONSE) {
+				Logger.debug(
+					`Full Non-Streaming Response from ${resolved.providerId}/${resolved.bareModel} → model "${model}":` +
+					`Body: ${rewrittenResponse}`
+				);
+			} else {
+				Logger.debug(
+					`Non-Streaming Response from ${resolved.providerId}/${resolved.bareModel} → model "${model}":` +
+					`Truncated Body: ${rewrittenResponse.slice(0, 2000)}`
+				);
+			}
 
 			return c.newResponse(rewrittenResponse, response.status as any, responseHeaders);
 		} catch (error) {

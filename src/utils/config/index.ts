@@ -107,6 +107,7 @@ export class ConfigHandler {
 
     private static schema = new ConfigSchema()
         .add("LAG_LOG_LEVEL", false, ["debug", "info", "warn", "error", "critical"])
+        .add("LAG_LOG_DEBUG_FULL_RESPONSE", false, [true, false])
 
         .add("LAG_HOST", false)
         .add("LAG_PORT", false)

@@ -47,7 +47,7 @@ src/
 - **Config format**: JSON files in `config/`:
   - `gateway.json` — array of providers, each with `id`, `name`, `backends[]` (each: `name`, `baseUrl`, optional `apiKey`, optional `proxyUrl`), optional `customModels.mapping`
   - `api-keys.json` — flat record of API key → `{ description?, allowedModels[], denyModels[] }`
-- **Env vars**: `LAG_LOG_LEVEL`, `LAG_HOST`, `LAG_PORT` (default 12117), `LAG_CONFIG_BASE_DIR` (default `./config`)
+- **Env vars**: `LAG_LOG_LEVEL`, `LAG_LOG_DEBUG_FULL_RESPONSE`, `LAG_HOST`, `LAG_PORT` (default 12117), `LAG_CONFIG_BASE_DIR` (default `./config`)
 - **Model IDs**: Exposed as `providerId/modelName` (e.g., `openai/gpt-4`). Aliases via `customModels.mapping`.
 - **Auth**: Bearer token checked against `api-keys.json`. Has `allowedModels`/`denyModels` per key (mutually exclusive).
 - **Default port**: 12117, **host**: `::` (IPv6 any).
