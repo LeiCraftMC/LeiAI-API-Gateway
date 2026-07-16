@@ -226,6 +226,17 @@ describe("createSSEModelRewriteTransform", () => {
 		expect(result).toBe("data: [DONE]\n");
 	});
 
+	test("should ignore any data sent after [DONE]", async () => {
+		const input =
+			"data: [DONE]\n" +
+			'{"id":"3","object":"chat.completion.chunk","model":"gpt-4","choices":[]}\n' +
+			"data: [DONE]\n";
+
+		const result = await runTransform(input, "provider-1/gpt-4");
+
+		expect(result).toBe("data: [DONE]\n");
+	});
+
 	test("should handle empty input", async () => {
 		const result = await runTransform("", "provider-1/gpt-4");
 		expect(result).toBe("");

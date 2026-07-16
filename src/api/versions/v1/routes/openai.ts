@@ -141,6 +141,7 @@ export function createSSEModelRewriteTransform(
 	const decoder = new TextDecoder();
 	const encoder = new TextEncoder();
 	let buffer = "";
+	let doneSeen = false;
 
 	const processLine = (line: string): string => {
 		if (line.startsWith("data: ") && !line.startsWith("data: [DONE]")) {
@@ -157,6 +158,12 @@ export function createSSEModelRewriteTransform(
 
 	return new TransformStream({
 		transform(chunk: Uint8Array, controller) {
+			if (doneSeen) {
+				// Once the SSE [DONE] sentinel has been emitted, ignore any
+				// trailing data the backend may have sent.
+				return;
+			}
+
 			buffer += decoder.decode(chunk, { stream: true });
 			const lines = buffer.split("\n");
 			// Keep the last (possibly incomplete) line in the buffer
@@ -167,9 +174,22 @@ export function createSSEModelRewriteTransform(
 				const cleanLine = line.endsWith("\r") ? line.slice(0, -1) : line;
 				const output = processLine(cleanLine);
 				controller.enqueue(encoder.encode(output + "\n"));
+
+				if (cleanLine.startsWith("data: [DONE]")) {
+					doneSeen = true;
+					// Flush the [DONE] line then close the stream.  Because
+					// controller.enqueue() is synchronous here, returning ends
+					// the transform call and the downstream receives the queued
+					// bytes before the stream closes.
+					return;
+				}
 			}
 		},
 		flush(controller) {
+			if (doneSeen) {
+				return;
+			}
+
 			if (buffer) {
 				const cleanLine = buffer.endsWith("\r") ? buffer.slice(0, -1) : buffer;
 				const output = processLine(cleanLine);
