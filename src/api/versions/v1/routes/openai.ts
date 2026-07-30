@@ -381,10 +381,17 @@ function createProxyHandler(targetPath: string) {
 			// Rewrite model field to bare name and forward
 			const rewrittenBody = rewriteModelField(bodyText, resolved.bareModel);
 
-			Logger.debug(
-				`Request on model "${model}" → ${resolved.providerId}/${resolved.bareModel}:` +
-				`Truncated Body: ${rewrittenBody.slice(0, 2000)}`
-			);
+			if (ConfigHandler.getConfig()?.LAG_LOG_DEBUG_FULL_REQUEST) {
+				Logger.debug(
+					`Request on model "${model}" → ${resolved.providerId}/${resolved.bareModel}:\n` +
+					`Body: ${rewrittenBody}`
+				);
+			} else {
+				Logger.debug(
+					`Request on model "${model}" → ${resolved.providerId}/${resolved.bareModel}:\n` +
+					`Truncated Body: ${rewrittenBody.slice(0, 2000)}`
+				);
+			}
 
 			
 			const rawRequest = c.req.raw as Request;
@@ -440,12 +447,12 @@ function createProxyHandler(targetPath: string) {
 
 						if (ConfigHandler.getConfig()?.LAG_LOG_DEBUG_FULL_RESPONSE) {
 							Logger.debug(
-								`Full Streaming Response from ${resolved.providerId}/${resolved.bareModel} → model "${model}":` +
+								`Full Streaming Response from ${resolved.providerId}/${resolved.bareModel} → model "${model}":\n` +
 								`Body: ${fullResponse}`
 							);
 						} else {
 							Logger.debug(
-								`Streaming Response from ${resolved.providerId}/${resolved.bareModel} → model "${model}":` +
+								`Streaming Response from ${resolved.providerId}/${resolved.bareModel} → model "${model}":\n` +
 								`Truncated Body: ${fullResponse.slice(0, 2000)}`
 							);
 						}
@@ -464,12 +471,12 @@ function createProxyHandler(targetPath: string) {
 
 			if (ConfigHandler.getConfig()?.LAG_LOG_DEBUG_FULL_RESPONSE) {
 				Logger.debug(
-					`Full Non-Streaming Response from ${resolved.providerId}/${resolved.bareModel} → model "${model}":` +
+					`Full Non-Streaming Response from ${resolved.providerId}/${resolved.bareModel} → model "${model}":\n` +
 					`Body: ${rewrittenResponse}`
 				);
 			} else {
 				Logger.debug(
-					`Non-Streaming Response from ${resolved.providerId}/${resolved.bareModel} → model "${model}":` +
+					`Non-Streaming Response from ${resolved.providerId}/${resolved.bareModel} → model "${model}":\n` +
 					`Truncated Body: ${rewrittenResponse.slice(0, 2000)}`
 				);
 			}

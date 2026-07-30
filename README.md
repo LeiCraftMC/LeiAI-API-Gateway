@@ -93,6 +93,7 @@ Create `config/api-keys.json` with your client API keys:
 | Variable | Default | Description |
 |---|---|---|
 | `LAG_LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error`, `critical` |
+| `LAG_LOG_DEBUG_FULL_REQUEST` | `false` | Log full gateway Request |
 | `LAG_LOG_DEBUG_FULL_RESPONSE` | `false` | Log full provider Response |
 | `LAG_HOST` | `::` | Server bind address (IPv6 any) |
 | `LAG_PORT` | `12117` | Server listen port |

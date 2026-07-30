@@ -8,6 +8,7 @@ services:
       - "12117:12117"
     environment:
       - LAG_LOG_LEVEL=info
+      - LAG_LOG_DEBUG_FULL_REQUEST=false
       - LAG_LOG_DEBUG_FULL_RESPONSE=false
     volumes:
       - /opt/leiai/api-gateway/config:/app/config:ro

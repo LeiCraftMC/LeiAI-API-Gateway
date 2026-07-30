@@ -71,12 +71,6 @@ export class BackendAPIClient {
 			headers.delete("Authorization");
 		}
 
-		// log request to backend details
-		Logger.debug(
-			`Sending request to backend: ${options?.method || "GET"} ${url}\n` + 
-			`Body: ${options?.body ? (typeof options.body === "string" ? options.body : String(options.body)).slice(0, 2000) + (typeof options.body === "string" && options.body.length > 2000 ? "… [truncated]" : "") : "<no body>"}`
-		);
-
 		if (this.settings.proxy) {
 			return this.requestViaSocks(url, headers, options);
 		}
