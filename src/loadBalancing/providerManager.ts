@@ -17,7 +17,7 @@ export class ProviderManager {
     }
 
     static async init(
-        providers: GatewayConfig.Types.Provider[],
+        providers: GatewayConfig.Types.ProviderInput[],
         needsModelFetching: boolean
     ) {
         if (this._initialized) return;
@@ -81,14 +81,18 @@ export class ProviderManager {
     export class Provider {
         public readonly id: string;
         public readonly name: string;
+        /** Whether the backends additionally accept native Anthropic
+         *  `/v1/messages` requests (passthrough).  See {@link GatewayConfig}. */
+        public readonly supportsAnthropicLikeAPI: boolean;
         public readonly backends: Provider.Backend[];
         public readonly healthMonitor: HealthMonitor;
         public readonly models: ProviderModelsIndex;
         public readonly loadBalancer: LoadBalancer;
 
-        constructor(config: GatewayConfig.Types.Provider) {
+        constructor(config: GatewayConfig.Types.ProviderInput) {
             this.id = config.id;
             this.name = config.name;
+            this.supportsAnthropicLikeAPI = config.supportsAnthropicLikeAPI ?? false;
             this.healthMonitor = new HealthMonitor(config.backends);
             this.backends = config.backends.map((backend) => ({
                 name: backend.name,

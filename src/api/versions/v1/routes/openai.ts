@@ -279,23 +279,38 @@ router.get("/models", (c) => {
 		}
 
 		// Filter by auth context
+		let visibleModels = models;
 		if (authContext) {
 			if (authContext.denyModels && authContext.denyModels.length > 0) {
-				return c.json({
-					object: "list",
-					data: models.filter((m) => !authContext.denyModels!.includes(m.id)),
-				}, 200);
-			}
-
-			if (authContext.allowedModels && authContext.allowedModels.length > 0) {
-				return c.json({
-					object: "list",
-					data: models.filter((m) => authContext.allowedModels!.includes(m.id)),
-				}, 200);
+				visibleModels = models.filter((m) => !authContext.denyModels!.includes(m.id));
+			} else if (authContext.allowedModels && authContext.allowedModels.length > 0) {
+				visibleModels = models.filter((m) => authContext.allowedModels!.includes(m.id));
 			}
 		}
 
-		return c.json({ object: "list", data: models }, 200);
+		// Anthropic-style clients (authenticated via x-api-key) get the
+		// Anthropic /v1/models envelope; OpenAI-style clients get the
+		// OpenAI list envelope.
+		const wantsAnthropicFormat = c.req.header("x-api-key") !== undefined;
+		if (wantsAnthropicFormat) {
+			const data = visibleModels.map((m) => ({
+				id: m.id,
+				display_name: m.id,
+				created_at: new Date(m.created * 1000).toISOString(),
+				type: "model" as const,
+			}));
+			return c.json(
+				{
+					data,
+					has_more: false,
+					first_id: data[0]?.id ?? null,
+					last_id: data[data.length - 1]?.id ?? null,
+				},
+				200,
+			);
+		}
+
+		return c.json({ object: "list", data: visibleModels }, 200);
 
 	} catch (error) {
 		
