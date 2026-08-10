@@ -79,13 +79,16 @@ src/
 
 ## Testing
 
-Tests use Bun's built-in test runner. Fake backends provided by `tests/helpers/fakeOpenAICompatibleAPI.ts`. SOCKS5 test server in `tests/helpers/socks5server/`.
+Tests use Bun's built-in test runner. Fake backends provided by `tests/helpers/fakeOpenAICompatibleAPI.ts` and `tests/helpers/fakeAnthropicAPI.ts`. SOCKS5 test server in `tests/helpers/socks5server/`.
 
 - `tests/smoke.test.ts` — basic imports and module checks
 - `tests/unit.test.ts` — config parsing, algorithms, headers
 - `tests/integration.test.ts` — request forwarding, failover
 - `tests/socks5-streaming.test.ts` — SOCKS5 proxy + streaming
-- `tests/openai-integration.test.ts` — OpenAI-compatible endpoint testing
+- `tests/openai-integration.test.ts` — OpenAI-compatible endpoint testing (incl. `@ai-sdk/openai-compatible`)
+- `tests/anthropic-translation.test.ts` — Anthropic↔OpenAI translation converters + `/v1/messages` endpoint (translation + passthrough) with a fake Anthropic backend
+- `tests/responses-translation.test.ts` — Responses↔chat converters + `/v1/responses` endpoint
+- `tests/ai-sdk-clients.test.ts` — end-to-end with REAL `@ai-sdk` clients (`@ai-sdk/anthropic`, `@ai-sdk/openai` Responses, `@ai-sdk/openai-compatible`) against a realistic `@copilotkit/aimock` `LLMock` backend (multi-chunk SSE + tool calls); proves text + tool-call round-trips, streaming and non-streaming, through every translated endpoint.
 
 ## Docker / Deployment
 

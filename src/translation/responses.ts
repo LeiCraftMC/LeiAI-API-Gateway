@@ -144,7 +144,9 @@ export function responsesRequestToOpenAIChat(
 		messages.push({ role: "system", content: systemText });
 	}
 
-	// 2. input → messages.
+	// 2. input → messages.  Input items may be typed (`type: "message"`,
+	//    `function_call`, `function_call_output`) or — as the OpenAI SDK sends
+	//    them — bare `{ role, content }` message items without a `type` field.
 	if (typeof req.input === "string") {
 		messages.push({ role: "user", content: req.input });
 	} else if (Array.isArray(req.input)) {
@@ -152,22 +154,7 @@ export function responsesRequestToOpenAIChat(
 			if (typeof raw !== "object" || raw === null) continue;
 			const item = raw as Responses.InputItem;
 
-			if (item.type === "message") {
-				const msg = item as Responses.InputMessageItem;
-				const role = msg.role === "developer" || msg.role === "system" ? "system" : msg.role;
-				let content: string | OpenAIChat.ContentPart[] | null;
-				if (typeof msg.content === "string") {
-					content = msg.content;
-				} else if (Array.isArray(msg.content)) {
-					const parts = (msg.content as Responses.InputContentPart[])
-						.map(responsesContentPartToOpenAI)
-						.filter((p): p is OpenAIChat.ContentPart => p !== null);
-					content = parts.length > 0 ? parts : "";
-				} else {
-					content = "";
-				}
-				messages.push({ role: role as OpenAIChat.Message["role"], content });
-			} else if (item.type === "function_call") {
+			if (item.type === "function_call") {
 				// An assistant tool call recorded in the conversation history.
 				const fc = item as Responses.FunctionCallItem;
 				messages.push({
@@ -186,6 +173,26 @@ export function responsesRequestToOpenAIChat(
 					tool_call_id: fco.call_id,
 					content: typeof fco.output === "string" ? fco.output : JSON.stringify(fco.output ?? ""),
 				});
+			} else if (
+				item.type === "message" ||
+				(item.type === undefined && "role" in item && "content" in item)
+			) {
+				// Message item (typed or bare).  Developer/system roles map to
+				// the OpenAI `system` role.
+				const msg = item as Responses.InputMessageItem;
+				const role = msg.role === "developer" || msg.role === "system" ? "system" : msg.role;
+				let content: string | OpenAIChat.ContentPart[] | null;
+				if (typeof msg.content === "string") {
+					content = msg.content;
+				} else if (Array.isArray(msg.content)) {
+					const parts = (msg.content as Responses.InputContentPart[])
+						.map(responsesContentPartToOpenAI)
+						.filter((p): p is OpenAIChat.ContentPart => p !== null);
+					content = parts.length > 0 ? parts : "";
+				} else {
+					content = "";
+				}
+				messages.push({ role: role as OpenAIChat.Message["role"], content });
 			}
 		}
 	}
