@@ -1,6 +1,8 @@
 
 build-and-push:
   stage: build
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
   variables:
     BUN_INSTALL_CACHE_DIR: .bun/install/cache
 
