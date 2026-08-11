@@ -40,9 +40,35 @@ export namespace GatewayConfig.Types {
 		id: z.string().min(1, "Provider ID cannot be empty").regex(/^[a-z0-9-]+$/, "Provider ID can only be lowercase letters, numbers, and hyphens"),
 		name: z.string().min(1, "Provider name cannot be empty"),
 		backends: z.array(ProviderBackend),
-		supportsAnthropicLikeAPI: z.boolean().default(false)
+		/**
+		 * Whether the backends of this provider additionally accept native
+		 * Anthropic-style `POST /v1/messages` requests (authenticated with
+		 * `x-api-key` + `anthropic-version`).
+		 *
+		 * - `false` (default): the backend only speaks OpenAI chat-completions.
+		 *   A client request to the gateway's `/v1/messages` endpoint is
+		 *   translated into a chat-completions request before forwarding.
+		 *
+		 * - `true`: the backend accepts Anthropic messages directly, so a
+		 *   `/v1/messages` request is forwarded as-is (passthrough) using
+		 *   Anthropic-style authentication.
+		 *
+		 * Backends always support OpenAI chat-completions regardless of this
+		 * flag; it only governs how Anthropic-style client requests are
+		 * routed.
+		 */
+		supportsAnthropicLikeAPI: z.boolean().default(false),
 	});
 	export type Provider = z.infer<typeof Provider>;
+
+	/**
+	 * The *input* shape of {@link Provider} — identical except that fields
+	 * with a zod `.default()` (like `supportsAnthropicLikeAPI`) are optional.
+	 * Used for APIs that accept provider configs the caller constructs
+	 * directly (tests, {@link ProviderManager.init}) so callers don't have
+	 * to spell out the defaulted fields.
+	 */
+	export type ProviderInput = z.input<typeof Provider>;
 
 
 	export const ConfigSchema = z.object({

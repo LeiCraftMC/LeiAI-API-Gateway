@@ -26,6 +26,18 @@
 					"apiKey": "sk-your-api-key-here"
 				}
 			]
+		},
+		{
+			"id": "anthropic-native",
+			"name": "Backend that also speaks the Anthropic Messages API natively",
+			"supportsAnthropicLikeAPI": true,
+			"backends": [
+				{
+					"name": "Anthropic-compatible upstream",
+					"baseUrl": "https://my-anthropic-compatible-host.com/v1",
+					"apiKey": "your-api-key"
+				}
+			]
 		}
 	],
 	"customModels": {
