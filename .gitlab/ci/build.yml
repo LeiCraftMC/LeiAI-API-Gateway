@@ -5,6 +5,7 @@ build-and-push:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
   variables:
     BUN_INSTALL_CACHE_DIR: .bun/install/cache
+    BUILDX_NO_DEFAULT_ATTESTATIONS: "1"
 
   cache:
     key:
