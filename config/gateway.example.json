@@ -43,7 +43,11 @@
 	"customModels": {
 		"mapping": {
 			"gpt-4": "openai/gpt-4",
-			"gpt-3.5": "openai/gpt-3.5-turbo"
+			"gpt-3.5": "openai/gpt-3.5-turbo",
+			"claude-opus": {
+				"target": "anthropic/claude-3-opus",
+				"aliases": ["opus", "claude-3-opus"]
+			}
 		},
 		"ownerID": "custom-owner"
 	}

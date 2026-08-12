@@ -91,7 +91,14 @@ export namespace GatewayConfig.Types {
 
 			mapping: z.record(
 				z.string().meta({ description: "Model Alias" }),
-				z.string().meta({ description: "Read Model (provider/model)" })
+				z.union([
+					z.string().meta({ description: "Real Model (provider/model)" }),
+					z.object({
+						target: z.string().meta({ description: "Real Model (provider/model)" }),
+						aliases: z.array(z.string()).meta({ description: "Additional Model Aliases for invisible on /v1/models endpoint" }),
+					})
+					.meta({ description: "Mapping with More Config Options" })
+				])
 			),
 
 			ownerID: z.string()
