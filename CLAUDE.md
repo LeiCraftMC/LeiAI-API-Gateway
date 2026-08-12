@@ -52,7 +52,7 @@ src/
 ## Key Conventions
 
 - **Config format**: JSON files in `config/`:
-  - `gateway.json` — array of providers, each with `id`, `name`, `backends[]` (each: `name`, `baseUrl`, optional `apiKey`, optional `proxyUrl`), optional `supportsAnthropicLikeAPI` (default `false`), optional `customModels.mapping`
+  - `gateway.json` — array of providers, each with `id`, `name`, `backends[]` (each: `name`, `baseUrl`, optional `apiKey`, optional `proxyUrl`), optional `supportsAnthropicLikeAPI` (default `false`), optional `customModels.mapping` (record of alias → `providerId/modelName` or `{ target, aliases }`)
   - `api-keys.json` — flat record of API key → `{ description?, allowedModels[], denyModels[] }`
 - **Env vars**: `LAG_LOG_LEVEL`, `LAG_LOG_DEBUG_FULL_REQUEST`, `LAG_LOG_DEBUG_FULL_RESPONSE`, `LAG_HOST`, `LAG_PORT` (default 12117), `LAG_CONFIG_BASE_DIR` (default `./config`)
 - **Client API surfaces** (all under `/v1`):

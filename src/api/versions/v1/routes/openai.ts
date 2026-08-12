@@ -36,7 +36,7 @@ export function resolveModel(model: string): {
 		// Custom model mapping is active:
 		//   - Only aliases defined in the mapping are accepted
 		//   - Direct providerId/modelName is blocked
-		const realModel = mapping[model];
+		const realModel = findMappedTarget(model, mapping);
 		if (!realModel) return null;
 		return resolvePrefixedModel(realModel);
 	}
@@ -84,11 +84,48 @@ function resolvePrefixedModel(prefixed: string): {
 	// No "/" — treat as another alias and follow the chain
 	const gatewayConfig = GatewayConfig.getConfig();
 	const mapping = gatewayConfig?.customModels?.mapping;
-	if (mapping && mapping[prefixed]) {
-		return resolvePrefixedModel(mapping[prefixed]);
+	if (mapping) {
+		const target = findMappedTarget(prefixed, mapping);
+		if (target) {
+			return resolvePrefixedModel(target);
+		}
 	}
 
 	return null;
+}
+
+/**
+ * Look up the target model for a single alias in the custom model mapping.
+ * Returns the configured `target` string (either `providerId/modelName` or
+ * another alias for chaining) or `null` when the alias is not defined.
+ *
+ * The record value can be either a plain target string or an object with
+ * `target` plus additional hidden `aliases`.
+ */
+function findMappedTarget(
+	alias: string,
+	mapping: NonNullable<GatewayConfig.Types.ConfigSchema["customModels"]>["mapping"],
+): string | null {
+	const value = mapping[alias];
+	if (typeof value === "string") {
+		return value;
+	}
+	if (value && typeof value === "object" && "target" in value) {
+		return value.target;
+	}
+	return null;
+}
+
+/**
+ * Check whether a model name is a visible alias key in the custom model
+ * mapping. Hidden aliases (`aliases` inside an object value) are not
+ * considered visible and should not appear on `GET /v1/models`.
+ */
+function isVisibleAlias(
+	alias: string,
+	mapping: NonNullable<GatewayConfig.Types.ConfigSchema["customModels"]>["mapping"],
+): boolean {
+	return Object.prototype.hasOwnProperty.call(mapping, alias);
 }
 
 /**
@@ -244,20 +281,22 @@ router.get("/models", (c) => {
 
 		const allBackendsModels = ProviderManager.getAllModels();
 
-		const customModelsMapping = Object.entries(gatewayConfig.customModels?.mapping ?? {});
+		const customModelsMapping = gatewayConfig.customModels?.mapping ?? {};
 
-		if (customModelsMapping.length > 0) {
+		if (Object.keys(customModelsMapping).length > 0) {
 
-			for (const [alias, realModel] of customModelsMapping) {
+			for (const [alias, targetOrObject] of Object.entries(customModelsMapping)) {
 
-				if (!allBackendsModels.has(realModel)) {
+				const target = typeof targetOrObject === "string" ? targetOrObject : targetOrObject.target;
+
+				if (!allBackendsModels.has(target)) {
 					Logger.warn(
-						`Custom model mapping for alias "${alias}" points to non-existent model "${realModel}". Skipping.`,
+						`Custom model mapping for alias "${alias}" points to non-existent model "${target}". Skipping.`,
 					);
 					continue;
 				}
 
-				const modelData = allBackendsModels.get(realModel)!;
+				const modelData = allBackendsModels.get(target)!;
 				models.push({
 					id: alias,
 					object: "model",

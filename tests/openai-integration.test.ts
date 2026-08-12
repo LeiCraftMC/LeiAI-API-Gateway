@@ -535,7 +535,10 @@ describe("v1 API Routes with custom model mapping", () => {
 			],
 			customModels: {
 				mapping: {
-					"claude-opus": "anthropic/claude-3-opus",
+					"claude-opus": {
+						target: "anthropic/claude-3-opus",
+						aliases: ["opus", "claude-3-opus"],
+					},
 				},
 				ownerID: "my-company",
 			},
@@ -571,7 +574,7 @@ describe("v1 API Routes with custom model mapping", () => {
 		(ApiKeysConfig as any).config = null;
 	});
 
-	test("GET /v1/models should return custom model aliases", async () => {
+	test("GET /v1/models should return only visible custom model aliases", async () => {
 		const res = await app.fetch(
 			new Request("http://test.local/v1/models", {
 				headers: { Authorization: `Bearer ${testApiKey}` },

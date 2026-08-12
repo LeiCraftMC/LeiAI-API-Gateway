@@ -63,7 +63,11 @@ Create `config/gateway.json` with your LLM provider backends:
   "customModels": {
     "mapping": {
       "gpt-4": "openai/gpt-4",
-      "gpt-3.5": "openai/gpt-3.5-turbo"
+      "gpt-3.5": "openai/gpt-3.5-turbo",
+      "claude-opus": {
+        "target": "anthropic/claude-3-opus",
+        "aliases": ["opus", "claude-3-opus"]
+      }
     },
     "ownerID": "custom-owner"
   }
@@ -109,7 +113,7 @@ Create `config/api-keys.json` with your client API keys:
 | `providers[].backends[].baseUrl` | Full URL to the OpenAI-compatible backend |
 | `providers[].backends[].apiKey` | (optional) API key injected into requests to this backend |
 | `providers[].backends[].proxyUrl` | (optional) SOCKS5 proxy URL (e.g., `socks5://user:pass@host:1080`) |
-| `customModels.mapping` | (optional) Map model aliases → `providerId/modelName` values |
+| `customModels.mapping` | (optional) Map model aliases → `providerId/modelName` values, or to `{ target, aliases }` for extra hidden aliases |
 | `customModels.ownerID` | (optional) Custom owner ID shown in `/v1/models` |
 
 #### `api-keys.json` — API Key Options
