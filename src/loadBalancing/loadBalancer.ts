@@ -55,15 +55,12 @@ export class LoadBalancer {
 	 * Forward a request to the next healthy backend.
 	 * Marks the backend unhealthy on error or non-2xx response.
 	 *
-	 * `authMode` selects the backend authentication dialect
-	 * (`"openai"` Bearer vs `"anthropic"` x-api-key); defaults to `"openai"`.
 	 */
 	async forwardRequest(
 		pathname: string,
 		method: string,
 		headers?: RequestInit["headers"],
-		body?: string,
-		authMode?: "openai" | "anthropic",
+		body?: string
 	): Promise<LoadBalancer.ForwardingSuccess | LoadBalancer.ForwardingError> {
 
 		const backendIndex = this.getNextBackendIndex();
@@ -83,8 +80,7 @@ export class LoadBalancer {
 			const response = await backend.apiClient.request(pathname, {
 				method,
 				headers,
-				body,
-				authMode,
+				body
 			});
 
 			if (!response.ok) {

@@ -208,8 +208,7 @@ router.post("/messages", async (c: Context) => {
 				"/messages",
 				"POST",
 				fwdHeaders,
-				rewrittenBody,
-				"anthropic",
+				rewrittenBody
 			);
 
 			return finalizeAnthropicResponse(
@@ -240,8 +239,7 @@ router.post("/messages", async (c: Context) => {
 			"/chat/completions",
 			"POST",
 			fwdHeaders,
-			chatBody,
-			"openai",
+			chatBody
 		);
 
 		return finalizeAnthropicResponse(

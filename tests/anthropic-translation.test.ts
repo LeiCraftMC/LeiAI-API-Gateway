@@ -494,7 +494,7 @@ describe("/v1/messages — native passthrough", () => {
 		const fwd = fakeBackend.requests.find((r) => r.pathname === "/v1/messages");
 		expect(fwd).toBeDefined();
 		expect(fwd!.headers["x-api-key"]).toBe(backendKey);
-		expect(fwd!.headers["authorization"]).toBeUndefined();
+		expect(fwd!.headers["authorization"]).toBe("Bearer " + backendKey);
 		expect(fwd!.headers["anthropic-version"]).toBe("2023-06-01");
 		const sentBody = JSON.parse(fwd!.body!);
 		expect(sentBody.model).toBe("claude-fake");

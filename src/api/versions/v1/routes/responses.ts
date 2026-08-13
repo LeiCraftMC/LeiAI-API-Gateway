@@ -107,8 +107,7 @@ router.post("/responses", async (c: Context) => {
 			"/chat/completions",
 			"POST",
 			fwdHeaders,
-			chatBody,
-			"openai",
+			chatBody
 		);
 
 		const { response, error } = result;
