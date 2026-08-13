@@ -7,16 +7,6 @@ import { LoadBalancingUtils } from "./utils";
 
 interface HttpClientOptions {
 	timeout?: number;
-	/**
-	 * Which authentication dialect to use for this request.
-	 *
-	 * - `"openai"` (default): `Authorization: Bearer <apiKey>` — for
-	 *   chat-completions / completions / embeddings / models endpoints.
-	 * - `"anthropic"`: `x-api-key: <apiKey>` + `anthropic-version` — for
-	 *   native Anthropic `/v1/messages` passthrough to a backend that
-	 *   {@link supportsAnthropicLikeAPI}.
-	 */
-	authMode?: "openai" | "anthropic";
 }
 
 export interface HttpResponse {
@@ -75,32 +65,12 @@ export class BackendAPIClient {
 
 		const headers = new Headers(options?.headers || {});
 
-		// Authenticate to the backend using the dialect-appropriate header
-		// for *this* request, and strip any client-supplied credentials so
-		// they are never leaked to or confused by the upstream backend.
-		const authMode = options?.authMode ?? "openai";
-		if (authMode === "anthropic") {
-			// Anthropic Messages API: x-api-key + anthropic-version.
-			// A client-provided anthropic-version is respected when present
-			// (passthrough); otherwise default to the pinned version.
-			if (this.settings.apiKey) {
-				headers.set("x-api-key", this.settings.apiKey);
-			} else {
-				headers.delete("x-api-key");
-			}
-			if (!headers.has("anthropic-version")) {
-				headers.set("anthropic-version", "2023-06-01");
-			}
-			headers.delete("Authorization");
+		if (this.settings.apiKey) {
+			headers.set("Authorization", `Bearer ${this.settings.apiKey}`);
+			headers.set("x-api-key", this.settings.apiKey);
 		} else {
-			// OpenAI-compatible: Authorization: Bearer.
-			if (this.settings.apiKey) {
-				headers.set("Authorization", `Bearer ${this.settings.apiKey}`);
-			} else {
-				headers.delete("Authorization");
-			}
+			headers.delete("Authorization");
 			headers.delete("x-api-key");
-			headers.delete("anthropic-version");
 		}
 
 		if (this.settings.proxy) {
