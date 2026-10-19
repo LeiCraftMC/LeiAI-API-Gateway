@@ -2,8 +2,9 @@
  * Translation between the **OpenAI Responses** client API
  * (`POST /v1/responses`) and the **OpenAI Chat Completions** backend API.
  *
- * Backends always speak chat-completions, so a Responses-style client request
- * is translated into a chat-completions request before forwarding, and the
+ * A Responses-style client request is translated into a chat-completions
+ * request before forwarding (and, for providers whose backends only speak the
+ * Anthropic Messages API, on from there via `chatAnthropic.ts`), and the
  * chat-completions response is translated back into a Responses object.
  * Streaming is handled by {@link openaiChatSseToResponsesSse} in `sse.ts`.
  *
@@ -80,6 +81,11 @@ export function openAIFinishReasonToResponseStatus(reason: string | null): strin
 	if (reason === "length") return "incomplete";
 	if (reason === "content_filter") return "incomplete";
 	return "completed";
+}
+
+/** `incomplete_details.reason` of an "incomplete" response. */
+export function openAIFinishReasonToIncompleteReason(reason: string | null): string {
+	return reason === "content_filter" ? "content_filter" : "max_output_tokens";
 }
 
 /* ------------------------------------------------------------------ */
@@ -267,7 +273,7 @@ export function openAIChatResponseToResponses(
 	};
 
 	if (status === "incomplete") {
-		response.incomplete_details = { reason: "max_output_tokens" };
+		response.incomplete_details = { reason: openAIFinishReasonToIncompleteReason(choice?.finish_reason ?? null) };
 	}
 
 	return response;

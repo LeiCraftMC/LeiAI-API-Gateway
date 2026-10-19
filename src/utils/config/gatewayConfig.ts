@@ -41,29 +41,49 @@ export namespace GatewayConfig.Types {
 		name: z.string().min(1, "Provider name cannot be empty"),
 		backends: z.array(ProviderBackend),
 		/**
-		 * Whether the backends of this provider additionally accept native
-		 * Anthropic-style `POST /v1/messages` requests (authenticated with
-		 * `x-api-key` + `anthropic-version`).
+		 * Whether the backends of this provider accept native Anthropic-style
+		 * `POST /v1/messages` requests (authenticated with `x-api-key` +
+		 * `anthropic-version`).
 		 *
-		 * - `false` (default): the backend only speaks OpenAI chat-completions.
-		 *   A client request to the gateway's `/v1/messages` endpoint is
-		 *   translated into a chat-completions request before forwarding.
+		 * - `false` (default): a client request to the gateway's
+		 *   `/v1/messages` endpoint is translated into a chat-completions
+		 *   request before forwarding.
 		 *
 		 * - `true`: the backend accepts Anthropic messages directly, so a
 		 *   `/v1/messages` request is forwarded as-is (passthrough) using
 		 *   Anthropic-style authentication.
 		 *
-		 * Backends always support OpenAI chat-completions regardless of this
-		 * flag; it only governs how Anthropic-style client requests are
-		 * routed.
+		 * Must be `true` when `supportsOpenAILikeAPI` is `false`.
 		 */
 		supportsAnthropicLikeAPI: z.boolean().default(false),
-	});
+		/**
+		 * Whether the backends of this provider speak the OpenAI API
+		 * (`/chat/completions`, `/completions`, `/embeddings`, `/models`).
+		 *
+		 * - `true` (default): OpenAI-style client requests are forwarded
+		 *   as-is, and `/v1/responses` is translated to chat-completions.
+		 *
+		 * - `false`: the backends only speak the Anthropic Messages API
+		 *   (requires `supportsAnthropicLikeAPI: true`).  `/v1/chat/completions`
+		 *   and `/v1/responses` requests are translated to `/messages`, models
+		 *   are listed via the Anthropic `/models` endpoint, and
+		 *   `/v1/completions` / `/v1/embeddings` are rejected because
+		 *   Anthropic has no equivalent.
+		 */
+		supportsOpenAILikeAPI: z.boolean().default(true),
+	}).refine(
+		(provider) => provider.supportsOpenAILikeAPI || provider.supportsAnthropicLikeAPI,
+		{
+			message: "A provider must support at least one API: set supportsAnthropicLikeAPI to true when supportsOpenAILikeAPI is false",
+			path: ["supportsAnthropicLikeAPI"],
+		},
+	);
 	export type Provider = z.infer<typeof Provider>;
 
 	/**
 	 * The *input* shape of {@link Provider} — identical except that fields
-	 * with a zod `.default()` (like `supportsAnthropicLikeAPI`) are optional.
+	 * with a zod `.default()` (like `supportsAnthropicLikeAPI` and
+	 * `supportsOpenAILikeAPI`) are optional.
 	 * Used for APIs that accept provider configs the caller constructs
 	 * directly (tests, {@link ProviderManager.init}) so callers don't have
 	 * to spell out the defaulted fields.

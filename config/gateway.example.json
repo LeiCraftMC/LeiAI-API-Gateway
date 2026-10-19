@@ -38,6 +38,19 @@
 					"apiKey": "your-api-key"
 				}
 			]
+		},
+		{
+			"id": "anthropic-only",
+			"name": "Backend that ONLY speaks the Anthropic Messages API",
+			"supportsOpenAILikeAPI": false,
+			"supportsAnthropicLikeAPI": true,
+			"backends": [
+				{
+					"name": "Anthropic-only upstream",
+					"baseUrl": "https://my-anthropic-only-host.com/v1",
+					"apiKey": "your-api-key"
+				}
+			]
 		}
 	],
 	"customModels": {

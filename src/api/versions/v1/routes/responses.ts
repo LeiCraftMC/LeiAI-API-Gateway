@@ -7,6 +7,12 @@ import type { AuthContext } from "../auth";
 import type { ReadableStreamReadResult } from "stream/web";
 import { resolveModel } from "./openai";
 import {
+	ANTHROPIC_API_VERSION,
+	TranslationError,
+	anthropicErrorToOpenAI,
+	anthropicResponseToOpenAIChat,
+	anthropicSseToOpenaiChatSse,
+	openAIChatRequestToAnthropic,
 	responsesRequestToOpenAIChat,
 	openAIChatResponseToResponses,
 	openaiChatSseToResponsesSse,
@@ -35,6 +41,22 @@ function convertChatResponseToResponses(text: string, modelName: string): string
 	try {
 		const chatResp = JSON.parse(text);
 		const responsesResp = openAIChatResponseToResponses(chatResp);
+		responsesResp.model = modelName;
+		return JSON.stringify(responsesResp);
+	} catch {
+		return text;
+	}
+}
+
+/** Convert a non-streaming Anthropic Messages response body into a
+ *  Responses object (by way of chat-completions), stamping the user-facing
+ *  `model` name.  Anything but a message, or a body that cannot be parsed,
+ *  is passed through unchanged. */
+function convertAnthropicResponseToResponses(text: string, modelName: string): string {
+	try {
+		const parsed = JSON.parse(text);
+		if (!Array.isArray(parsed?.content)) return text;
+		const responsesResp = openAIChatResponseToResponses(anthropicResponseToOpenAIChat(parsed));
 		responsesResp.model = modelName;
 		return JSON.stringify(responsesResp);
 	} catch {
@@ -87,32 +109,42 @@ router.post("/responses", async (c: Context) => {
 		}
 
 		// Backends speak chat-completions: translate the Responses request,
-		// stamping the bare model name for the backend.
+		// stamping the bare model name for the backend.  Backends that only
+		// speak the Anthropic Messages API get it translated one step further.
 		parsed.model = resolved.bareModel;
 		const chatRequest = responsesRequestToOpenAIChat(parsed);
-		const chatBody = JSON.stringify(chatRequest);
+		const viaAnthropic = !provider.supportsOpenAILikeAPI;
+		const forwardPath = viaAnthropic ? "/messages" : "/chat/completions";
+		const forwardBody = JSON.stringify(
+			viaAnthropic ? openAIChatRequestToAnthropic(chatRequest) : chatRequest,
+		);
 
 		const debugPrefix = `from ${resolved.providerId}/${resolved.bareModel}`;
+		const requestLabel = viaAnthropic ? "Responses→Anthropic request" : "Responses→Chat request";
 		if (ConfigHandler.getConfig()?.LAG_LOG_DEBUG_FULL_REQUEST) {
-			Logger.debug(`Responses→Chat request on "${model}" → ${debugPrefix}:\nBody: ${chatBody}`);
+			Logger.debug(`${requestLabel} on "${model}" → ${debugPrefix}:\nBody: ${forwardBody}`);
 		} else {
-			Logger.debug(`Responses→Chat request on "${model}" → ${debugPrefix}:\nTruncated Body: ${chatBody.slice(0, 2000)}`);
+			Logger.debug(`${requestLabel} on "${model}" → ${debugPrefix}:\nTruncated Body: ${forwardBody.slice(0, 2000)}`);
 		}
 
 		const fwdHeaders: Record<string, string> = {
 			"content-type": c.req.raw.headers.get("content-type") ?? "application/json",
 		};
+		if (viaAnthropic) fwdHeaders["anthropic-version"] = ANTHROPIC_API_VERSION;
 
 		const result = await provider.loadBalancer.forwardRequest(
-			"/chat/completions",
+			forwardPath,
 			"POST",
 			fwdHeaders,
-			chatBody
+			forwardBody
 		);
 
 		const { response, error } = result;
 		if (error || !response) {
 			const status = (error?.status ?? 502) as ContentfulStatusCode;
+			if (viaAnthropic) {
+				return c.json(anthropicErrorToOpenAI(error?.body, error?.message ?? "Bad Gateway"), status);
+			}
 			return openaiError(c, status, error?.message ?? "Bad Gateway", "server_error");
 		}
 
@@ -124,7 +156,13 @@ router.post("/responses", async (c: Context) => {
 		const isStream = responseHeaders["content-type"]?.startsWith("text/event-stream");
 
 		if (isStream) {
-			let returnStream: ReadableStream<Uint8Array> = response.body!.pipeThrough(
+			// An Anthropic event stream is first turned into chat chunks
+			// (with usage, which the Responses events report).
+			let chatStream: ReadableStream<Uint8Array> = response.body!;
+			if (viaAnthropic) {
+				chatStream = chatStream.pipeThrough(anthropicSseToOpenaiChatSse(model, { includeUsage: true }));
+			}
+			let returnStream: ReadableStream<Uint8Array> = chatStream.pipeThrough(
 				openaiChatSseToResponsesSse(model),
 			);
 
@@ -160,7 +198,9 @@ router.post("/responses", async (c: Context) => {
 
 		// Non-streaming response.
 		const responseText = await response.text();
-		const rewritten = convertChatResponseToResponses(responseText, model);
+		const rewritten = viaAnthropic
+			? convertAnthropicResponseToResponses(responseText, model)
+			: convertChatResponseToResponses(responseText, model);
 
 		if (ConfigHandler.getConfig()?.LAG_LOG_DEBUG_FULL_RESPONSE) {
 			Logger.debug(
@@ -176,6 +216,9 @@ router.post("/responses", async (c: Context) => {
 
 		return c.newResponse(rewritten, response.status as any, responseHeaders);
 	} catch (error) {
+		if (error instanceof TranslationError) {
+			return openaiError(c, 400, error.message);
+		}
 		const message = error instanceof Error ? error.message : String(error);
 		Logger.error(
 			`Error proxying /v1/responses:`,

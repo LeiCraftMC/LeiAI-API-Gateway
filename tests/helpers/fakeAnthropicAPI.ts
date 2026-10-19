@@ -10,11 +10,17 @@ export interface FakeAnthropicConfig {
 	responseBody?: string;
 	delayMs?: number;
 	model?: string;
+	/** Model ids listed by `GET /v1/models` (default: just `model`). */
+	models?: string[];
+	/** Page size of `GET /v1/models` (default: everything on one page). */
+	modelsPageSize?: number;
 }
 
 export interface FakeAnthropicRequest {
 	method: string;
 	pathname: string;
+	/** Query string, including the leading `?` (empty when absent). */
+	search: string;
 	headers: Record<string, string>;
 	body?: string;
 }
@@ -25,11 +31,12 @@ export interface FakeAnthropicRequest {
 
 /**
  * Lightweight fake backend that speaks the Anthropic Messages API natively
- * (used to test the `supportsAnthropicLikeAPI` passthrough path).
+ * (used to test the `supportsAnthropicLikeAPI` passthrough path and
+ * Anthropic-only providers).
  *
  * Handles:
  *  - POST /v1/messages  (streaming + non-streaming)
- *  - GET  /v1/models    (Anthropic envelope)
+ *  - GET  /v1/models    (Anthropic envelope, paginated via `after_id`)
  *
  * Authenticates with `x-api-key` + `anthropic-version` and tracks all
  * received requests.
@@ -89,14 +96,7 @@ export class FakeAnthropicAPI {
 				}
 
 				if (url.pathname === "/v1/models") {
-					return Response.json({
-						data: [
-							{ id: model, display_name: model, created_at: "2024-01-01T00:00:00Z", type: "model" },
-						],
-						has_more: false,
-						first_id: model,
-						last_id: model,
-					});
+					return this._handleModels(url, model);
 				}
 
 				return Response.json({ type: "error", error: { type: "not_found_error", message: "Not found" } }, { status: 404 });
@@ -142,8 +142,22 @@ export class FakeAnthropicAPI {
 		this._requests.push({
 			method: req.method,
 			pathname: url.pathname,
+			search: url.search,
 			headers: Object.fromEntries(req.headers),
 			body,
+		});
+	}
+
+	private _handleModels(url: URL, model: string): Response {
+		const ids = this.config.models ?? [model];
+		const afterId = url.searchParams.get("after_id");
+		const start = afterId ? ids.indexOf(afterId) + 1 : 0;
+		const page = ids.slice(start, start + (this.config.modelsPageSize ?? ids.length));
+		return Response.json({
+			data: page.map((id) => ({ id, display_name: id, created_at: "2024-01-01T00:00:00Z", type: "model" })),
+			has_more: start + page.length < ids.length,
+			first_id: page[0] ?? null,
+			last_id: page[page.length - 1] ?? null,
 		});
 	}
 

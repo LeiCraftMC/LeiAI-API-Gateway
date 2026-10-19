@@ -1,7 +1,7 @@
 /**
  * Server-Sent-Event (SSE) translation transforms.
  *
- * Two transforms live here:
+ * The transforms living here:
  *
  *  - {@link openaiChatSseToAnthropicSse} — converts an OpenAI
  *    chat-completions *streaming* response (a sequence of
@@ -11,21 +11,38 @@
  *    request is translated to a chat-completions backend and the response
  *    is streamed.
  *
+ *  - {@link anthropicSseToOpenaiChatSse} — the reverse: converts an
+ *    Anthropic Messages event stream into chat-completion chunks.  Used when
+ *    an OpenAI-style client request is translated for a provider whose
+ *    backends only speak the Anthropic Messages API.
+ *
+ *  - {@link openaiChatSseToResponsesSse} — converts chat-completion chunks
+ *    into an OpenAI Responses event stream.
+ *
  *  - {@link anthropicSseModelRewrite} — a passthrough transform that only
  *    rewrites the `model` field inside the `message_start` event to the
  *    user-facing model name.  Used when an Anthropic-style client request
  *    is forwarded natively (passthrough) to a
  *    `supportsAnthropicLikeAPI` backend.
  *
- * Both are built on a small shared SSE event parser ({@link
+ * All are built on a small shared SSE event parser ({@link
  * createSSETransform}) that buffers raw bytes into complete SSE events
  * (an `event:` line plus one or more `data:` lines, terminated by a blank
  * line) and dispatches them to a handler.
  */
 
-import type { OpenAIChat, Responses } from "./types";
-import { openAIFinishReasonToAnthropic } from "./chatAnthropic";
-import { openAIFinishReasonToResponseStatus } from "./responses";
+import type { Anthropic, OpenAIChat, Responses } from "./types";
+import {
+	JSON_RESPONSE_TOOL,
+	anthropicStopReasonToOpenAI,
+	anthropicUsageToOpenAI,
+	openAIFinishReasonToAnthropic,
+} from "./chatAnthropic";
+import type { AnthropicToChatOptions } from "./chatAnthropic";
+import {
+	openAIFinishReasonToIncompleteReason,
+	openAIFinishReasonToResponseStatus,
+} from "./responses";
 
 /* ------------------------------------------------------------------ */
 /*  SSE parsing framework                                              */
@@ -303,6 +320,190 @@ export function openaiChatSseToAnthropicSse(
 }
 
 /* ------------------------------------------------------------------ */
+/*  Anthropic SSE  ->  OpenAI Chat SSE                                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Convert an Anthropic Messages event stream into an OpenAI
+ * chat-completions streaming response (`chat.completion.chunk` `data:`
+ * lines terminated by `data: [DONE]`).
+ *
+ * Text deltas become `delta.content`, thinking deltas become
+ * `delta.reasoning_content`, and each `tool_use` content block becomes a
+ * `delta.tool_calls` entry (Anthropic block indices are remapped to 0-based
+ * tool-call indices), except a {@link JSON_RESPONSE_TOOL} call answering a
+ * JSON `response_format`, whose input is streamed as content.  The finish
+ * chunk, the optional usage chunk and `[DONE]` are emitted on
+ * `message_stop`, or at the end of the input once `message_delta` gave the
+ * stop reason.  An `error` event, or an input that ends before the stop
+ * reason, becomes an OpenAI-style `{ error }` chunk and no `[DONE]`.
+ *
+ * @param modelName the user-facing model name to place in every chunk.
+ * @param options.includeUsage emit a final usage-only chunk (empty
+ *   `choices`), as OpenAI does for `stream_options.include_usage`.
+ * @param options.jsonResponse see {@link AnthropicToChatOptions}.
+ */
+export function anthropicSseToOpenaiChatSse(
+	modelName: string,
+	options: { includeUsage?: boolean } & AnthropicToChatOptions = {},
+): TransformStream<Uint8Array, Uint8Array> {
+	let id = "chatcmpl-gateway";
+	const created = Math.floor(Date.now() / 1000);
+	let started = false;
+	let ended = false;
+	let stopReason: string | null = null;
+	const usage: Partial<Anthropic.Usage> = {};
+	// Per tool_use content block (by Anthropic block index): its OpenAI
+	// tool-call index, or "json" for the JSON answer, and whether any of its
+	// input JSON has been sent yet.
+	const toolBlocks = new Map<number, { toolIndex: number | "json"; hasInput: boolean }>();
+	let toolCallCount = 0;
+
+	const chunkSSE = (choices: OpenAIChat.ChunkChoice[], extra?: object) =>
+		`data: ${JSON.stringify({ id, object: "chat.completion.chunk", created, model: modelName, choices, ...extra })}\n\n`;
+
+	const deltaSSE = (delta: OpenAIChat.ChunkChoice["delta"], finishReason: string | null = null) =>
+		chunkSSE([{ index: 0, delta, finish_reason: finishReason }]);
+
+	// The first chunk carries the assistant role, as in OpenAI streams.
+	const ensureStarted = (emit: (s: string) => void) => {
+		if (started) return;
+		started = true;
+		emit(deltaSSE({ role: "assistant", content: "" }));
+	};
+
+	// Usage counts are cumulative; keep the latest numeric value per field.
+	const mergeUsage = (u: Partial<Anthropic.Usage> | undefined) => {
+		for (const [key, value] of Object.entries(u ?? {})) {
+			if (typeof value === "number") usage[key] = value;
+		}
+	};
+
+	// A piece of a tool block's input JSON: tool-call arguments, or content
+	// for the JSON answer.
+	const emitInput = (
+		emit: (s: string) => void,
+		block: { toolIndex: number | "json"; hasInput: boolean },
+		json: string,
+	) => {
+		block.hasInput = true;
+		emit(block.toolIndex === "json"
+			? deltaSSE({ content: json })
+			: deltaSSE({ tool_calls: [{ index: block.toolIndex, function: { arguments: json } }] }));
+	};
+
+	const fail = (emit: (s: string) => void, error: { type?: string; message?: string } | undefined) => {
+		ended = true;
+		emit(`data: ${JSON.stringify({
+			error: { message: error?.message ?? "Upstream error", type: error?.type ?? "api_error" },
+		})}\n\n`);
+	};
+
+	const finish = (emit: (s: string) => void) => {
+		ended = true;
+		ensureStarted(emit);
+		// A JSON answer arrives as a tool call but is reported as content.
+		const finishReason = anthropicStopReasonToOpenAI(stopReason) ?? "stop";
+		emit(deltaSSE({}, finishReason === "tool_calls" && toolCallCount === 0 ? "stop" : finishReason));
+		if (options.includeUsage) {
+			emit(chunkSSE([], { usage: anthropicUsageToOpenAI(usage) }));
+		}
+		emit("data: [DONE]\n\n");
+	};
+
+	return createSSETransform({
+		onEvent(ev, emit) {
+			if (ended) return;
+			let event: Anthropic.StreamEvent;
+			try {
+				event = JSON.parse(ev.data);
+			} catch {
+				return; // drop malformed lines
+			}
+
+			// `?.` because a `data: null` keep-alive parses to null.
+			switch (event?.type) {
+				case "message_start":
+					id = event.message?.id ?? id;
+					mergeUsage(event.message?.usage);
+					ensureStarted(emit);
+					return;
+
+				case "content_block_start": {
+					const block = event.content_block;
+					if (block?.type === "tool_use") {
+						ensureStarted(emit);
+						if (options.jsonResponse && block.name === JSON_RESPONSE_TOOL) {
+							toolBlocks.set(event.index ?? 0, { toolIndex: "json", hasInput: false });
+						} else {
+							const toolIndex = toolCallCount++;
+							toolBlocks.set(event.index ?? 0, { toolIndex, hasInput: false });
+							emit(deltaSSE({
+								tool_calls: [{
+									index: toolIndex,
+									id: block.id ?? "",
+									type: "function",
+									function: { name: block.name ?? "", arguments: "" },
+								}],
+							}));
+						}
+					} else if (block?.type === "text" && block.text) {
+						ensureStarted(emit);
+						emit(deltaSSE({ content: block.text }));
+					}
+					return;
+				}
+
+				case "content_block_delta": {
+					const delta = event.delta;
+					if (delta?.type === "text_delta" && delta.text) {
+						ensureStarted(emit);
+						emit(deltaSSE({ content: delta.text }));
+					} else if (delta?.type === "thinking_delta" && delta.thinking) {
+						ensureStarted(emit);
+						emit(deltaSSE({ reasoning_content: delta.thinking }));
+					} else if (delta?.type === "input_json_delta" && delta.partial_json) {
+						const block = toolBlocks.get(event.index ?? 0);
+						if (block) emitInput(emit, block, delta.partial_json);
+					}
+					return;
+				}
+
+				case "content_block_stop": {
+					// A tool call without input streams no input JSON at all, but
+					// OpenAI clients parse the arguments, so complete them as "{}".
+					const block = toolBlocks.get(event.index ?? 0);
+					if (block && !block.hasInput) emitInput(emit, block, "{}");
+					return;
+				}
+
+				case "message_delta":
+					stopReason = event.delta?.stop_reason ?? stopReason;
+					mergeUsage(event.usage);
+					return;
+
+				case "message_stop":
+					finish(emit);
+					return;
+
+				case "error":
+					fail(emit, event.error);
+					return;
+
+				// `ping` carries nothing to forward.
+			}
+		},
+		onEnd(emit) {
+			if (ended) return;
+			// Without a stop reason the upstream stream was cut off; report
+			// that rather than a clean finish.
+			if (stopReason === null) fail(emit, { message: "The upstream stream ended before the message was complete" });
+			else finish(emit);
+		},
+	});
+}
+
+/* ------------------------------------------------------------------ */
 /*  OpenAI Chat SSE  ->  OpenAI Responses SSE                         */
 /* ------------------------------------------------------------------ */
 
@@ -322,7 +523,8 @@ function makeResponsesSSE(seq: () => number, event: string, data: object): strin
  * `response.function_call_arguments.delta`/`.done`, `response.completed`)
  * with monotonically increasing `sequence_number`s.  Tool calls become
  * `function_call` output items.  The final `response.completed` event
- * carries a fully reconstructed `Response` object.
+ * carries a fully reconstructed `Response` object.  An upstream `{ error }`
+ * chunk ends the stream with `error` and `response.failed` events instead.
  *
  * @param modelName the user-facing model name to place in the response.
  */
@@ -350,6 +552,7 @@ export function openaiChatSseToResponsesSse(
 	let inputTokens = 0;
 	let outputTokens = 0;
 	let doneSeen = false;
+	let failed = false;
 	let createdAt = Math.floor(Date.now() / 1000);
 
 	const closeText = (emit: (s: string) => void) => {
@@ -398,7 +601,7 @@ export function openaiChatSseToResponsesSse(
 
 	return createSSETransform({
 		onEvent(ev, emit) {
-			if (doneSeen) return;
+			if (doneSeen || failed) return;
 			if (ev.data === "[DONE]") {
 				doneSeen = true;
 				return;
@@ -409,6 +612,7 @@ export function openaiChatSseToResponsesSse(
 			} catch {
 				return;
 			}
+			if (!chunk || typeof chunk !== "object") return; // e.g. `data: null`
 
 			if (!started) {
 				messageId = chunk.id ?? messageId;
@@ -420,6 +624,24 @@ export function openaiChatSseToResponsesSse(
 				emit(makeResponsesSSE(nextSeq, "response.created", { type: "response.created", response: baseResponse }));
 				emit(makeResponsesSSE(nextSeq, "response.in_progress", { type: "response.in_progress", response: baseResponse }));
 				started = true;
+			}
+
+			// An upstream error fails the response instead of completing it.
+			if (chunk.error) {
+				failed = true;
+				const error = typeof chunk.error === "string" ? { message: chunk.error } : chunk.error;
+				const code = error.code ?? error.type ?? "server_error";
+				const message = error.message ?? "Upstream error";
+				emit(makeResponsesSSE(nextSeq, "error", { type: "error", code, message, param: null }));
+				emit(makeResponsesSSE(nextSeq, "response.failed", {
+					type: "response.failed",
+					response: {
+						id: messageId, object: "response", created_at: createdAt, status: "failed", model: modelName,
+						output: [], error: { code, message },
+						usage: { input_tokens: inputTokens, output_tokens: outputTokens, total_tokens: inputTokens + outputTokens },
+					},
+				}));
+				return;
 			}
 
 			if (!chunk.choices || chunk.choices.length === 0) {
@@ -494,7 +716,7 @@ export function openaiChatSseToResponsesSse(
 			}
 		},
 		onEnd(emit) {
-			if (!started) return;
+			if (!started || failed) return;
 			closeText(emit);
 			closeToolItems(emit);
 
@@ -508,7 +730,9 @@ export function openaiChatSseToResponsesSse(
 				output: buildOutput(),
 				output_text: outputText,
 				usage: { input_tokens: inputTokens, output_tokens: outputTokens, total_tokens: inputTokens + outputTokens },
-				...(status === "incomplete" ? { incomplete_details: { reason: "max_output_tokens" } } : {}),
+				...(status === "incomplete"
+					? { incomplete_details: { reason: openAIFinishReasonToIncompleteReason(finishReason) } }
+					: {}),
 			};
 			emit(makeResponsesSSE(nextSeq, "response.completed", { type: "response.completed", response: completedResponse }));
 		},

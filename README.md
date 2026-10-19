@@ -110,11 +110,37 @@ Create `config/api-keys.json` with your client API keys:
 | `providers[].id` | Unique provider ID (lowercase letters, numbers, and hyphens) |
 | `providers[].name` | Human-readable provider name |
 | `providers[].backends[].name` | Unique name for this backend |
-| `providers[].backends[].baseUrl` | Full URL to the OpenAI-compatible backend |
+| `providers[].backends[].baseUrl` | Full URL to the backend's API (OpenAI-compatible, or the Anthropic Messages API when `supportsOpenAILikeAPI` is `false`) |
 | `providers[].backends[].apiKey` | (optional) API key injected into requests to this backend |
 | `providers[].backends[].proxyUrl` | (optional) SOCKS5 proxy URL (e.g., `socks5://user:pass@host:1080`) |
+| `providers[].supportsAnthropicLikeAPI` | (optional, default `false`) The backends accept native Anthropic `/v1/messages` requests, so `/v1/messages` is passed through instead of translated to chat completions |
+| `providers[].supportsOpenAILikeAPI` | (optional, default `true`) The backends speak the OpenAI API. Set to `false` (together with `supportsAnthropicLikeAPI: true`) for backends that **only** speak the Anthropic Messages API — see below |
 | `customModels.mapping` | (optional) Map model aliases → `providerId/modelName` values, or to `{ target, aliases }` for extra hidden aliases |
 | `customModels.ownerID` | (optional) Custom owner ID shown in `/v1/models` |
+
+#### Backends that only speak the Anthropic API
+
+```json
+{
+  "id": "claude",
+  "name": "Anthropic-only backend",
+  "supportsOpenAILikeAPI": false,
+  "supportsAnthropicLikeAPI": true,
+  "backends": [
+    { "name": "Upstream", "baseUrl": "https://my-anthropic-only-host.com/v1", "apiKey": "your-api-key" }
+  ]
+}
+```
+
+For such a provider the gateway only uses the backends' Anthropic API: `POST /messages`, and `GET /models` for the model list.
+
+- `POST /v1/chat/completions` and `POST /v1/responses` are translated to `/messages` and back (sent with `anthropic-version: 2023-06-01`), streaming and non-streaming, including tool calls, images and PDF files.
+  - Requests without `max_tokens` get a default of 4096, which Anthropic requires.
+  - A JSON `response_format` is answered through a forced tool call, so the reply is still JSON text.
+  - Options Anthropic cannot honour (`n` > 1, `logprobs`, whitespace-only stop sequences, audio input) return `400`. Errors from the backend keep their status and Anthropic's message.
+- `POST /v1/messages` is passed through natively, with the client's `anthropic-version` (default `2023-06-01`).
+- `GET /v1/models` lists the models from the backends' Anthropic `/models` endpoint.
+- `POST /v1/completions` and `POST /v1/embeddings` return `400`, since Anthropic has no equivalent.
 
 #### `api-keys.json` — API Key Options
 

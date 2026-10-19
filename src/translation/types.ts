@@ -42,10 +42,11 @@ export namespace OpenAIChat {
 
 	export type ContentPart =
 		| { type: "text"; text: string }
-		| { type: "image_url"; image_url: { url: string; detail?: string } };
+		| { type: "image_url"; image_url: { url: string; detail?: string } }
+		| { type: "file"; file: { file_data?: string; file_id?: string; filename?: string } };
 
 	export interface Message {
-		role: "system" | "user" | "assistant" | "tool";
+		role: "system" | "developer" | "user" | "assistant" | "tool";
 		/** `null` is valid for assistant messages that only contain tool calls. */
 		content?: string | ContentPart[] | null;
 		tool_calls?: ToolCall[];
@@ -71,6 +72,11 @@ export namespace OpenAIChat {
 			| "none"
 			| "required"
 			| { type: "function"; function: { name: string } };
+		parallel_tool_calls?: boolean;
+		response_format?: {
+			type: string;
+			json_schema?: { name?: string; schema?: Record<string, unknown>; strict?: boolean };
+		};
 		user?: string;
 		[key: string]: unknown;
 	}
@@ -79,6 +85,8 @@ export namespace OpenAIChat {
 		prompt_tokens: number;
 		completion_tokens: number;
 		total_tokens: number;
+		/** `cached_tokens` is the cached share of `prompt_tokens`. */
+		prompt_tokens_details?: { cached_tokens?: number };
 	}
 
 	export interface Choice {
@@ -88,6 +96,8 @@ export namespace OpenAIChat {
 			content: string | null;
 			tool_calls?: ToolCall[];
 			refusal?: string;
+			/** Non-standard (DeepSeek-style) field carrying the model's reasoning. */
+			reasoning_content?: string;
 		};
 		finish_reason: string | null;
 	}
@@ -110,6 +120,7 @@ export namespace OpenAIChat {
 			content?: string;
 			tool_calls?: ToolCallDelta[];
 			refusal?: string;
+			reasoning_content?: string;
 		};
 		finish_reason: string | null;
 	}
@@ -121,6 +132,8 @@ export namespace OpenAIChat {
 		model: string;
 		choices: ChunkChoice[];
 		usage?: ResponseUsage;
+		/** Set (without `choices`) when the stream fails midway. */
+		error?: { message?: string; type?: string; code?: string | null } | string;
 		[key: string]: unknown;
 	}
 }
@@ -159,11 +172,24 @@ export namespace Anthropic {
 		is_error?: boolean;
 	}
 
+	export interface ThinkingBlock {
+		type: "thinking";
+		thinking: string;
+		signature?: string;
+	}
+
+	export interface DocumentBlock {
+		type: "document";
+		source: { type: "base64"; media_type: string; data: string };
+	}
+
 	export type ContentBlock =
 		| TextBlock
 		| ImageBlock
 		| ToolUseBlock
-		| ToolResultBlock;
+		| ToolResultBlock
+		| ThinkingBlock
+		| DocumentBlock;
 
 	export interface Message {
 		role: "user" | "assistant";
@@ -187,7 +213,11 @@ export namespace Anthropic {
 		stream?: boolean;
 		stop_sequences?: string[];
 		tools?: Tool[];
-		tool_choice?: { type: "auto" | "any" | "tool" | "none"; name?: string };
+		tool_choice?: {
+			type: "auto" | "any" | "tool" | "none";
+			name?: string;
+			disable_parallel_tool_use?: boolean;
+		};
 		thinking?: unknown;
 		[key: string]: unknown;
 	}
@@ -195,6 +225,9 @@ export namespace Anthropic {
 	export interface Usage {
 		input_tokens: number;
 		output_tokens: number;
+		/** Prompt-cache writes / reads, which `input_tokens` does not include. */
+		cache_creation_input_tokens?: number | null;
+		cache_read_input_tokens?: number | null;
 		[key: string]: unknown;
 	}
 
@@ -208,6 +241,28 @@ export namespace Anthropic {
 		stop_sequence: string | null;
 		usage: Usage;
 		[key: string]: unknown;
+	}
+
+	/**
+	 * The `data:` payload of a streaming event (`message_start`,
+	 * `content_block_start` / `_delta` / `_stop`, `message_delta`,
+	 * `message_stop`, `ping`, `error`).  Only the fields the SSE converter
+	 * reads are spelled out.
+	 */
+	export interface StreamEvent {
+		type: string;
+		index?: number;
+		message?: { id?: string; model?: string; usage?: Partial<Usage> };
+		content_block?: { type: string; id?: string; name?: string; text?: string };
+		delta?: {
+			type?: string;
+			text?: string;
+			thinking?: string;
+			partial_json?: string;
+			stop_reason?: string | null;
+		};
+		usage?: Partial<Usage>;
+		error?: { type?: string; message?: string };
 	}
 }
 

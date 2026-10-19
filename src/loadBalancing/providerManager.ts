@@ -81,9 +81,13 @@ export class ProviderManager {
     export class Provider {
         public readonly id: string;
         public readonly name: string;
-        /** Whether the backends additionally accept native Anthropic
-         *  `/v1/messages` requests (passthrough).  See {@link GatewayConfig}. */
+        /** Whether the backends accept native Anthropic `/v1/messages`
+         *  requests (passthrough).  See {@link GatewayConfig}. */
         public readonly supportsAnthropicLikeAPI: boolean;
+        /** Whether the backends speak the OpenAI API; when `false` they only
+         *  speak the Anthropic Messages API and OpenAI-style requests are
+         *  translated.  See {@link GatewayConfig}. */
+        public readonly supportsOpenAILikeAPI: boolean;
         public readonly backends: Provider.Backend[];
         public readonly healthMonitor: HealthMonitor;
         public readonly models: ProviderModelsIndex;
@@ -93,6 +97,12 @@ export class ProviderManager {
             this.id = config.id;
             this.name = config.name;
             this.supportsAnthropicLikeAPI = config.supportsAnthropicLikeAPI ?? false;
+            this.supportsOpenAILikeAPI = config.supportsOpenAILikeAPI ?? true;
+            if (!this.supportsOpenAILikeAPI && !this.supportsAnthropicLikeAPI) {
+                throw new Error(
+                    `Provider "${config.id}": supportsAnthropicLikeAPI must be true when supportsOpenAILikeAPI is false`,
+                );
+            }
             this.healthMonitor = new HealthMonitor(config.backends);
             this.backends = config.backends.map((backend) => ({
                 name: backend.name,
@@ -102,7 +112,7 @@ export class ProviderManager {
                     proxyUrl: backend.proxyUrl,
                 }),
             }));
-            this.models = new ProviderModelsIndex();
+            this.models = new ProviderModelsIndex(this.supportsOpenAILikeAPI ? "openai" : "anthropic");
             this.loadBalancer = new LoadBalancer(
                 this.id,
                 this.backends.map((b) => ({ name: b.name, apiClient: b.apiClient })),

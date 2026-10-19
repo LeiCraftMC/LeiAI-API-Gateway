@@ -7,6 +7,7 @@ import type { AuthContext } from "../auth";
 import type { ReadableStreamReadResult } from "stream/web";
 import { resolveModel, rewriteModelField, rewriteResponseModel } from "./openai";
 import {
+	ANTHROPIC_API_VERSION,
 	anthropicRequestToOpenAIChat,
 	openAIChatResponseToAnthropic,
 	openaiChatSseToAnthropicSse,
@@ -191,10 +192,12 @@ router.post("/messages", async (c: Context) => {
 			const rewrittenBody = rewriteModelField(bodyText, resolved.bareModel);
 
 			// Forward the client's anthropic-version / anthropic-beta headers
-			// so the backend receives the right API version and betas.
-			const fwdHeaders: Record<string, string> = { "content-type": contentType };
-			const av = rawRequest.headers.get("anthropic-version");
-			if (av) fwdHeaders["anthropic-version"] = av;
+			// so the backend receives the right API version and betas.  The
+			// version is required by Anthropic backends, so it is defaulted.
+			const fwdHeaders: Record<string, string> = {
+				"content-type": contentType,
+				"anthropic-version": rawRequest.headers.get("anthropic-version") || ANTHROPIC_API_VERSION,
+			};
 			const ab = rawRequest.headers.get("anthropic-beta");
 			if (ab) fwdHeaders["anthropic-beta"] = ab;
 

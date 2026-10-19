@@ -3,6 +3,7 @@ import { GatewayConfig } from "../src/utils/config/gatewayConfig";
 import { HealthMonitor } from "../src/loadBalancing/healthMonitor";
 import { LoadBalancer } from "../src/loadBalancing/loadBalancer";
 import { BackendAPIClient } from "../src/loadBalancing/backendAPIClient";
+import { Provider } from "../src/loadBalancing/providerManager";
 
 describe("GatewayConfig Types — ProviderBackend schema", () => {
 	test("should accept valid minimal config", () => {
@@ -58,6 +59,44 @@ describe("GatewayConfig Types — ProviderBackend schema", () => {
 			name: "no-url",
 		});
 		expect(result.success).toBe(false);
+	});
+});
+
+describe("GatewayConfig Types — Provider API support flags", () => {
+	const base = {
+		id: "p",
+		name: "P",
+		backends: [{ name: "b", baseUrl: "http://localhost:8000" }],
+	};
+
+	test("existing configs default to an OpenAI-only provider", () => {
+		const result = GatewayConfig.Types.Provider.safeParse(base);
+		expect(result.success).toBe(true);
+		if (result.success) {
+			expect(result.data.supportsOpenAILikeAPI).toBe(true);
+			expect(result.data.supportsAnthropicLikeAPI).toBe(false);
+		}
+	});
+
+	test("should accept an Anthropic-only provider", () => {
+		const result = GatewayConfig.Types.Provider.safeParse({
+			...base,
+			supportsOpenAILikeAPI: false,
+			supportsAnthropicLikeAPI: true,
+		});
+		expect(result.success).toBe(true);
+	});
+
+	test("should reject a provider that supports neither API", () => {
+		const result = GatewayConfig.Types.Provider.safeParse({ ...base, supportsOpenAILikeAPI: false });
+		expect(result.success).toBe(false);
+	});
+
+	test("Provider refuses to be built without any supported API", () => {
+		expect(() => new Provider({ ...base, supportsOpenAILikeAPI: false })).toThrow();
+		const provider = new Provider({ ...base, supportsOpenAILikeAPI: false, supportsAnthropicLikeAPI: true });
+		expect(provider.supportsOpenAILikeAPI).toBe(false);
+		expect(provider.supportsAnthropicLikeAPI).toBe(true);
 	});
 });
 

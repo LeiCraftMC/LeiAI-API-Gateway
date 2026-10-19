@@ -1,10 +1,21 @@
 import { Context, Hono } from "hono";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { ProviderManager } from "../../../../loadBalancing/providerManager";
 import { Logger } from "../../../../utils/logger";
 import { GatewayConfig } from "../../../../utils/config/gatewayConfig";
 import type { AuthContext } from "../auth";
 import type { ReadableStreamReadResult } from "stream/web";
 import { ConfigHandler } from "../../../../utils/config";
+import {
+	ANTHROPIC_API_VERSION,
+	TranslationError,
+	anthropicErrorToOpenAI,
+	anthropicResponseToOpenAIChat,
+	anthropicSseToOpenaiChatSse,
+	openAIChatRequestToAnthropic,
+	wantsJsonResponse,
+} from "../../../../translation";
+import type { AnthropicToChatOptions, OpenAIChat } from "../../../../translation";
 
 export const router = new Hono();
 
@@ -159,6 +170,28 @@ export function rewriteResponseModel(body: string, modelName: string): string {
 	} catch {
 		// Not valid JSON — pass through unchanged
 		return body;
+	}
+}
+
+/**
+ * Convert a non-streaming Anthropic Messages response body into an OpenAI
+ * chat-completions response body, stamping the user-facing `model` name.
+ * Anything but a message (e.g. an error object), or a body that cannot be
+ * parsed, is passed through unchanged.
+ */
+function convertAnthropicResponseToChat(
+	text: string,
+	modelName: string,
+	options: AnthropicToChatOptions,
+): string {
+	try {
+		const parsed = JSON.parse(text);
+		if (!Array.isArray(parsed?.content)) return text;
+		const chatResp = anthropicResponseToOpenAIChat(parsed, options);
+		chatResp.model = modelName;
+		return JSON.stringify(chatResp);
+	} catch {
+		return text;
 	}
 }
 
@@ -364,6 +397,31 @@ router.get("/models", (c) => {
 /*  Proxy handler factory  —  used by all OpenAI POST endpoints        */
 /* ------------------------------------------------------------------ */
 
+/** How a request reaches the backend, and how the backend's response is
+ *  turned back into the client's format. */
+interface ProxyForward {
+	path: string;
+	body: string;
+	headers: Record<string, string>;
+	streamTransform: () => TransformStream<Uint8Array, Uint8Array>;
+	convertBody: (text: string) => string;
+}
+
+/** Forwarding for providers whose backends only speak the Anthropic
+ *  Messages API: the chat request is translated to `/messages`, and the
+ *  response back to chat-completions. */
+function chatViaAnthropic(chatRequest: OpenAIChat.Request, modelName: string): ProxyForward {
+	const options = { jsonResponse: wantsJsonResponse(chatRequest) };
+	const includeUsage = chatRequest.stream_options?.include_usage === true;
+	return {
+		path: "/messages",
+		body: JSON.stringify(openAIChatRequestToAnthropic(chatRequest)),
+		headers: { "anthropic-version": ANTHROPIC_API_VERSION },
+		streamTransform: () => anthropicSseToOpenaiChatSse(modelName, { ...options, includeUsage }),
+		convertBody: (text) => convertAnthropicResponseToChat(text, modelName, options),
+	};
+}
+
 function createProxyHandler(targetPath: string) {
 	return async (c: Context) => {
 		try {
@@ -376,16 +434,17 @@ function createProxyHandler(targetPath: string) {
 
 			// Read the raw request body
 			const bodyText = await c.req.text();
+			let requestBody: OpenAIChat.Request | undefined;
 			let model: string | undefined;
 
 			try {
-				const parsed = JSON.parse(bodyText);
-				model = parsed?.model;
+				requestBody = JSON.parse(bodyText);
+				model = requestBody?.model;
 			} catch {
 				// Body is not JSON — pass it through as-is
 			}
 
-			if (!model) {
+			if (!requestBody || !model) {
 				return c.json({
 					error: { message: "Model is required", type: "invalid_request_error" },
 				}, 400);
@@ -432,35 +491,68 @@ function createProxyHandler(targetPath: string) {
 				}
 			}
 
-			// Rewrite model field to bare name and forward
-			const rewrittenBody = rewriteModelField(bodyText, resolved.bareModel);
+			// Providers whose backends only speak the Anthropic Messages API
+			// get chat requests translated to /messages (and the response
+			// translated back).  Text completions and embeddings have no
+			// Anthropic equivalent.
+			const viaAnthropic = !provider.supportsOpenAILikeAPI;
+			if (viaAnthropic && targetPath !== "/chat/completions") {
+				return c.json({
+					error: {
+						message: `Model "${model}" does not support /v1${targetPath}: its provider only speaks the Anthropic Messages API`,
+						type: "invalid_request_error",
+					},
+				}, 400);
+			}
 
+			// Rewrite model field to bare name and forward
+			const forward: ProxyForward = viaAnthropic
+				? chatViaAnthropic({ ...requestBody, model: resolved.bareModel }, model)
+				: {
+					path: targetPath,
+					body: rewriteModelField(bodyText, resolved.bareModel),
+					headers: {},
+					streamTransform: () => createSSEModelRewriteTransform(model),
+					convertBody: (text) => rewriteResponseModel(text, model),
+				};
+
+			const rawRequest = c.req.raw as Request;
+			const forwardHeaders: Record<string, string> = {
+				"content-type": rawRequest.headers.get("content-type") ?? "application/json",
+				...forward.headers,
+			};
+
+			const requestLabel = viaAnthropic ? "Chat→Anthropic request" : "Request";
 			if (ConfigHandler.getConfig()?.LAG_LOG_DEBUG_FULL_REQUEST) {
 				Logger.debug(
-					`Request on model "${model}" → ${resolved.providerId}/${resolved.bareModel}:\n` +
-					`Body: ${rewrittenBody}`
+					`${requestLabel} on model "${model}" → ${resolved.providerId}/${resolved.bareModel}:\n` +
+					`Body: ${forward.body}`
 				);
 			} else {
 				Logger.debug(
-					`Request on model "${model}" → ${resolved.providerId}/${resolved.bareModel}:\n` +
-					`Truncated Body: ${rewrittenBody.slice(0, 2000)}`
+					`${requestLabel} on model "${model}" → ${resolved.providerId}/${resolved.bareModel}:\n` +
+					`Truncated Body: ${forward.body.slice(0, 2000)}`
 				);
 			}
 
-			
-			const rawRequest = c.req.raw as Request;
 			const result = await provider.loadBalancer.forwardRequest(
-				targetPath,
+				forward.path,
 				rawRequest.method,
-				{
-					"content-type": rawRequest.headers.get("content-type") ?? "application/json",
-				},
-				rewrittenBody,
+				forwardHeaders,
+				forward.body,
 			);
 
 			const response = result.response;
 			const error = result.error;
 			if (error || !response) {
+				// Translated requests keep the backend's status and message, so
+				// clients learn why Anthropic rejected them.
+				if (viaAnthropic) {
+					return c.json(
+						anthropicErrorToOpenAI(error?.body, error?.message ?? "Bad Gateway"),
+						(error?.status ?? 502) as ContentfulStatusCode,
+					);
+				}
 				return c.json({
 					error: {
 						message: "Internal Server Error",
@@ -474,12 +566,11 @@ function createProxyHandler(targetPath: string) {
 				responseHeaders[key] = value;
 			});
 
-			if (JSON.parse(bodyText).stream || responseHeaders["content-type"]?.startsWith("text/event-stream")) {
+			if (requestBody.stream || responseHeaders["content-type"]?.startsWith("text/event-stream")) {
 				// Streaming SSE response —  pipe through a TransformStream
-				// that rewrites `model` in each `data: {...}` line.
-				let returnStream = response.body!.pipeThrough(
-					createSSEModelRewriteTransform(model),
-				);
+				// that rewrites `model` in each `data: {...}` line (or that
+				// translates an Anthropic event stream into chat chunks).
+				let returnStream = response.body!.pipeThrough(forward.streamTransform());
 
 				// wait for the stream to finished in the background for logging it after the stream finishes, but don't block the response
 				if (Logger.getLogLevel() === "debug") {
@@ -521,7 +612,7 @@ function createProxyHandler(targetPath: string) {
 
 			// Non-streaming response — buffer, rewrite, return as string body
 			const responseText = await response.text();
-			const rewrittenResponse = rewriteResponseModel(responseText, model);
+			const rewrittenResponse = forward.convertBody(responseText);
 
 			if (ConfigHandler.getConfig()?.LAG_LOG_DEBUG_FULL_RESPONSE) {
 				Logger.debug(
@@ -537,6 +628,9 @@ function createProxyHandler(targetPath: string) {
 
 			return c.newResponse(rewrittenResponse, response.status as any, responseHeaders);
 		} catch (error) {
+			if (error instanceof TranslationError) {
+				return c.json({ error: { message: error.message, type: "invalid_request_error" } }, 400);
+			}
 			const message = error instanceof Error ? error.message : String(error);
 			Logger.error(`Error proxying ${targetPath}:`, message, (error as Error).stack ? (error as Error).stack : "<no stack trace>");
 			return c.json({

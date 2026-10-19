@@ -152,6 +152,16 @@ describe("openAIChatResponseToResponses", () => {
 		expect(out.status).toBe("incomplete");
 		expect(out.incomplete_details).toEqual({ reason: "max_output_tokens" });
 	});
+
+	test("maps content_filter to incomplete with reason content_filter", () => {
+		const out = openAIChatResponseToResponses({
+			id: "c4", object: "chat.completion", created: 1, model: "m",
+			choices: [{ index: 0, message: { role: "assistant", content: "" }, finish_reason: "content_filter" }],
+			usage: { prompt_tokens: 1, completion_tokens: 0, total_tokens: 1 },
+		} as any);
+		expect(out.status).toBe("incomplete");
+		expect(out.incomplete_details).toEqual({ reason: "content_filter" });
+	});
 });
 
 /* ================================================================== */
@@ -198,6 +208,34 @@ describe("openaiChatSseToResponsesSse", () => {
 		expect(out).toContain("event: response.completed");
 		// The completed event reconstructs the function_call in output.
 		expect(out).toContain('"call_id":"call_1"');
+	});
+
+	test("turns an upstream error chunk into error + response.failed", async () => {
+		const input = [
+			'data: {"id":"c","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"Hel"},"finish_reason":null}]}',
+			'data: {"error":{"message":"Overloaded","type":"server_error"}}',
+		].join("\n\n") + "\n\n";
+
+		const out = await runTransform(input, openaiChatSseToResponsesSse("user/model"));
+
+		expect(out).toContain("event: error");
+		expect(out).toContain("event: response.failed");
+		expect(out).toContain('"status":"failed"');
+		expect(out).toContain('"message":"Overloaded"');
+		expect(out).not.toContain("event: response.completed");
+	});
+
+	test("reports content_filter as the incomplete reason", async () => {
+		const input = [
+			'data: {"id":"c","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"No"},"finish_reason":null}]}',
+			'data: {"id":"c","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{},"finish_reason":"content_filter"}]}',
+			"data: [DONE]",
+		].join("\n\n") + "\n\n";
+
+		const out = await runTransform(input, openaiChatSseToResponsesSse("user/model"));
+
+		expect(out).toContain('"status":"incomplete"');
+		expect(out).toContain('"incomplete_details":{"reason":"content_filter"}');
 	});
 });
 

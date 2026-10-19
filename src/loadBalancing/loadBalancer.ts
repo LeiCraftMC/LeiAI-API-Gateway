@@ -7,6 +7,10 @@ import { Logger } from "../utils/logger";
 /*  LoadBalancer  —  Round-robin + health-aware request forwarding      */
 /* ------------------------------------------------------------------ */
 
+/** Statuses with which a backend rejects the request itself as invalid;
+ *  they say nothing about the backend's health. */
+const CLIENT_ERROR_STATUSES = new Set([400, 413, 422]);
+
 export class LoadBalancer {
 	private currentIndex = 0;
 
@@ -53,7 +57,8 @@ export class LoadBalancer {
 
 	/**
 	 * Forward a request to the next healthy backend.
-	 * Marks the backend unhealthy on error or non-2xx response.
+	 * Marks the backend unhealthy on error or non-2xx response, except when
+	 * it rejected the request as invalid (400 / 413 / 422).
 	 *
 	 */
 	async forwardRequest(
@@ -85,7 +90,9 @@ export class LoadBalancer {
 
 			if (!response.ok) {
 
-				this.healthMonitor.setHealthyness(backendIndex, false);
+				if (!CLIENT_ERROR_STATUSES.has(response.status)) {
+					this.healthMonitor.setHealthyness(backendIndex, false);
+				}
 
 				const errorBody = await response.text().catch(() => "<unreadable body>");
 				Logger.error(
@@ -98,6 +105,7 @@ export class LoadBalancer {
 					error: {
 						message: "Backend returned error: " + errorBody.slice(0, 500),
 						status: response.status,
+						body: errorBody,
 					},
 				};
 			}
@@ -150,6 +158,8 @@ export namespace LoadBalancer {
 		error: {
 			status: number;
 			message: string;
+			/** The backend's error body, when it answered with an HTTP error. */
+			body?: string;
 		};
 	}
 
