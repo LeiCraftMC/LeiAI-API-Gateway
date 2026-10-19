@@ -10,3 +10,9 @@ bun.lockb
 
 config/*
 !config/*.example.json
+
+
+# Coverage and test reports
+coverage
+*.lcov
+junit.xml

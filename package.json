@@ -7,6 +7,7 @@
 	"scripts": {
 		"typecheck": "tsc -p ./tsconfig/tsconfig.typecheck.json && echo 'Typecheck passed!'",
 		"test": "bun test",
+		"test:ci": "bun test --coverage --reporter=junit --reporter-outfile=./junit.xml",
 		"dev": "bun run --watch src/index.ts",
 		"compile": "bun run ./scripts/compile/index.ts",
 		"start": "bun run scripts/entrypoint.ts"

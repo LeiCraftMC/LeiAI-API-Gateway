@@ -27,4 +27,10 @@ test:typecheck:
 test:unit:
   stage: test
   script:
-    - bun test
+    - bun run test:ci
+  # The "All files" row of bun's coverage table; the capture group picks the % Lines column.
+  coverage: '/All files\s*\|\s*[\d.]+\s*\|\s*([\d.]+)/'
+  artifacts:
+    when: always
+    reports:
+      junit: junit.xml
